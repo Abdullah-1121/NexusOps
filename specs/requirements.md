@@ -1,6 +1,6 @@
 # NexusOps — Requirements Specification
 
-Status: **Draft v0.1** — authoritative WHAT for the system. `design.md` answers HOW; `tasks.md` tracks execution. Every requirement here is written to be **testable** — an implicit "we know we're done when…" hangs off each one.
+Status: **Draft v0.2** — authoritative WHAT for the system. `design.md` answers HOW; `tasks.md` tracks execution. Every requirement here is written to be **testable** — an implicit "we know we're done when…" hangs off each one.
 
 ## 1. Purpose & Scope
 
@@ -44,9 +44,9 @@ Numbering is `FR-<n>`. Each carries an **acceptance check** (how we prove it's s
 ### FR-1 — Webhook ingestion
 - The service exposes an HTTP endpoint that accepts an incident alert payload (§5.1) via POST.
 - Unknown/malformed payloads are rejected with `4xx` and a strict-JSON error; they are never silently dropped.
-- Valid payloads are enqueued for processing exactly once. Duplicate delivery of the same incident (same `incident_id`) must not create duplicate work.
+- Valid payloads are enqueued at-least-once; the service dedupes by `incident_id` so duplicate deliveries do not create duplicate work **while the process is running**. If the process restarts mid-incident, a re-delivered alert may be re-triaged — this is accepted in v1. (Hard "exactly once" would require a durable queue; not built yet — see OQ-2.)
 
-**Acceptance:** Post a valid payload → 202 + `incident_id`. Post a malformed payload → 4xx + JSON error. Re-post the same `incident_id` → no re-triage.
+**Acceptance:** Post a valid payload → 202 + `incident_id`. Post a malformed payload → 4xx + JSON error. Re-post the same `incident_id` in a single running process → no re-triage.
 
 ### FR-2 — Evidence gathering via MCP tools
 - The agent can call exactly three tools, defined in §5.2:
@@ -71,7 +71,7 @@ Numbering is `FR-<n>`. Each carries an **acceptance check** (how we prove it's s
 **Acceptance:** Every benchmark run parses; any parse failure fails the run and is raised as a defect.
 
 ### FR-5 — Human-in-the-loop gate
-- Execution of `trigger_github_rollback` (and any future destructive tool) is blocked until an explicit human approval is recorded against the incident's checkpointer state.
+- Execution of `trigger_github_rollback` (and any future destructive tool) is blocked until the operator's explicit decision is received via the approval endpoint (§5.4) and recorded against the incident's checkpointer state.
 - No code path may auto-approve. Rejection terminates the pipeline for that incident cleanly.
 
 **Acceptance:** A state-machine test drives an incident to the gate and asserts the rollback tool is never invoked before approval; a rejected incident records `state=rejected`.
@@ -95,7 +95,7 @@ Numbering is `FR-<n>`. Each carries an **acceptance check** (how we prove it's s
 
 ## 4. Non-Functional Requirements — SLAs & Guarantees
 
-- **NFR-1 Latency:** P95 triage time (alert received → staged at human gate) < **2.5 seconds** on the reference machine.
+- **NFR-1 Latency:** P95 triage time (alert received → staged at human gate) < **2.5 seconds** on the reference machine, for incidents handled by the **SLM-only path**. Incidents escalated to the frontier model are excluded from this target and reported separately in the benchmark (their latency depends on an external vendor).
 - **NFR-2 Output integrity:** 100% of remediation plans are strict, schema-valid JSON (§5.3).
 - **NFR-3 Concurrency safety:** Concurrent incidents do not deadlock, interleave state, or share mutable state. Each incident's state machine is isolated and checkpointer-guarded.
 - **NFR-4 No silent failures:** Every failure is either propagated, logged with error code, or triggers a loud circuit-break into the trace. No `except: pass`.
@@ -158,6 +158,25 @@ Validation rules:
 - `confidence` in `[0,1]`; enum fields strictly enumerated; at least one remediation step.
 - Schema violation → the plan is rejected and the run fails loud (defect, not warning).
 
+### 5.4 Human approval command contract
+How the operator's decision reaches the gate (FR-5). Plain HTTP POST — the dashboard's real-time stream is for *watching*; decisions are normal request/response.
+
+- Endpoint: `POST /incidents/{incident_id}/approval`
+- Request body (strict JSON):
+```json
+{
+  "decision": "approve | reject",
+  "actor": "string (operator id/name)"
+}
+```
+- Response: `{status: "approved" | "rejected" | "already_decided", incident_id}`
+- Rules:
+  - `approve` unlocks `trigger_github_rollback` for that incident and resumes the paused state machine.
+  - `reject` ends the pipeline for that incident cleanly (`state=rejected`); no remediation runs.
+  - A second decision on the same incident returns `already_decided` and changes nothing (first decision wins).
+
+**Acceptance:** Sending `approve` then running the benchmark's rollback-worthy fixture results in the mock rollback tool firing once. Sending `reject` results in no tool firing and `state=rejected`.
+
 ## 6. Benchmark & Acceptance Suite
 
 - **B-1:** 30 synthetic incidents covering: critical (rollback-worthy), warning, info, malformed-log-source (empty evidence), ambiguous severity (frontier escalation path), duplicate delivery.
@@ -183,7 +202,7 @@ Validation rules:
 ## 9. Open Questions (resolved in `design.md`)
 
 1. Transport: **WebSocket vs SSE** for FR-6. Implies different backpressure/persistence choices.
-2. Queue: single-process in-memory queue vs. Redis. (Description says Redis; concurrency needs justify it — NFR-3.)
+2. Queue: single-process in-memory queue vs. Redis. (In-memory forces the FR-1 restart caveat; Redis earns its keep only if multi-worker or restart survival is required — see OQ-2 discussion in `design.md`.)
 3. SLM escalation trigger: exact threshold/rule for "ambiguous or high-impact".
 4. Checkpointer persistence: in-memory (SQLite) vs. external store for resume-after-human-review.
 5. Reference frontier model + fallback policy if the frontier model times out (does NFR-1 include model outage?).
