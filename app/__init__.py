@@ -1,0 +1,1 @@
+from app.ingest import app  # noqa: F401

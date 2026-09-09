@@ -1,6 +1,6 @@
 # NexusOps — Requirements Specification
 
-Status: **Draft v0.2** — authoritative WHAT for the system. `design.md` answers HOW; `tasks.md` tracks execution. Every requirement here is written to be **testable** — an implicit "we know we're done when…" hangs off each one.
+Status: **Draft v0.3** — authoritative WHAT for the system. `design.md` answers HOW; feature-level spec & task files live under `specs/features/<feature>/`; `tasks.md` is the board linking them. Every requirement here is written to be **testable** — an implicit "we know we're done when…" hangs off each one.
 
 ## 1. Purpose & Scope
 
@@ -39,27 +39,27 @@ It is a **triage and proposal system**, not an unattended auto-healing system. A
 
 ## 3. Functional Requirements
 
-Numbering is `FR-<n>`. Each carries an **acceptance check** (how we prove it's satisfied).
+Numbering is `FR-<n>`. Each carries an **acceptance check** (how we prove it's satisfied). Feature-level detail lives in `specs/features/`.
 
 ### FR-1 — Webhook ingestion
 - The service exposes an HTTP endpoint that accepts an incident alert payload (§5.1) via POST.
 - Unknown/malformed payloads are rejected with `4xx` and a strict-JSON error; they are never silently dropped.
-- Valid payloads are enqueued at-least-once; the service dedupes by `incident_id` so duplicate deliveries do not create duplicate work **while the process is running**. If the process restarts mid-incident, a re-delivered alert may be re-triaged — this is accepted in v1. (Hard "exactly once" would require a durable queue; not built yet — see OQ-2.)
+- Valid payloads are enqueued at-least-once into a Redis queue. A Redis `SET` keyed by `incident_id` dedupes, and because the seen-set lives in Redis it **survives process restarts**: a re-delivered alert is still deduped after a restart. The claim stays at-least-once — an incident lost to a crash mid-triage with no re-delivery is not reprocessed (ack/lease reprocessing is a marked upgrade, not v1; design D-2).
 
-**Acceptance:** Post a valid payload → 202 + `incident_id`. Post a malformed payload → 4xx + JSON error. Re-post the same `incident_id` in a single running process → no re-triage.
+**Acceptance:** Post a valid payload → 202 + `incident_id`. Post a malformed payload → 4xx + JSON error. Re-post the same `incident_id` → no re-triage, even across a process restart. Redis down → 503, loud (NFR-6).
 
 ### FR-2 — Evidence gathering via MCP tools
 - The agent can call exactly three tools, defined in §5.2:
   - `fetch_service_logs(service_name, timestamp_window)`
   - `query_prometheus_metrics(metric_name, duration)`
-  - `trigger_github_rollback(commit_sha)` — remediation tool, gated (§FR-5).
+  - `trigger_github_rollback(commit_sha)` — remediation tool, gated (FR-5).
 - All tool calls and their results are recorded in the trace.
 
 **Acceptance:** Running the benchmark records every tool call, arguments, and result; missing/gated tool calls are visible in the trace.
 
 ### FR-3 — Tiered model routing (model cascade)
 - A cheap SLM performs the first-pass triage: severity classification, affected service, error-type extraction from the alert.
-- The frontier model is engaged **only** when the SLM's classification is ambiguous/high-impact, or for root-cause synthesis — not for routine triage.
+- The frontier model is engaged **only** when the SLM's classification is ambiguous/high-impact (design D-4), or for root-cause synthesis — not for routine triage.
 - The routing decision (which model, why, token counts, latency) is part of the trace.
 
 **Acceptance:** The benchmark reports per-incident model usage, token cost, and P95 latency. Routine incidents must not invoke the frontier model.
@@ -71,16 +71,17 @@ Numbering is `FR-<n>`. Each carries an **acceptance check** (how we prove it's s
 **Acceptance:** Every benchmark run parses; any parse failure fails the run and is raised as a defect.
 
 ### FR-5 — Human-in-the-loop gate
-- Execution of `trigger_github_rollback` (and any future destructive tool) is blocked until the operator's explicit decision is received via the approval endpoint (§5.4) and recorded against the incident's checkpointer state.
+- Execution of `trigger_github_rollback` (and any future destructive tool) is blocked until the operator's explicit decision is received via the approval contract (§5.4 — HTTP POST or WebSocket message, design D-1) and recorded against the incident's checkpointer state.
 - No code path may auto-approve. Rejection terminates the pipeline for that incident cleanly.
 
 **Acceptance:** A state-machine test drives an incident to the gate and asserts the rollback tool is never invoked before approval; a rejected incident records `state=rejected`.
 
 ### FR-6 — Real-time streaming diagnostics
-- The dashboard receives live pipeline events (ingest, classification, tool calls, gate state, final plan) over a real-time transport (WebSocket or SSE — decided in `design.md`).
-- Events are ordered per incident; the dashboard can open with a partially complete incident and catch up.
+- The dashboard receives live pipeline events (ingest, classification, tool calls, gate state, final plan) over a **WebSocket** connection (design D-1).
+- Events are ordered per incident; a dashboard that connects after an incident started can **catch up** — the server replays missed events on (re)connect.
+- The operator's decision (§5.4) may be sent over the same WebSocket as a typed message.
 
-**Acceptance:** Streaming test observes all pipeline events for a synthetic incident on the wire, in order, without polling.
+**Acceptance:** Streaming test observes all pipeline events for a synthetic incident on the wire, in order. A client that disconnects and reconnects mid-incident receives the missed events. A decision message over the socket unblocks the gate.
 
 ### FR-7 — Observability & tracing
 - Every pipeline step is traced (OpenTelemetry / Arize Phoenix) with duration, model, tool, and outcome.
@@ -100,6 +101,7 @@ Numbering is `FR-<n>`. Each carries an **acceptance check** (how we prove it's s
 - **NFR-3 Concurrency safety:** Concurrent incidents do not deadlock, interleave state, or share mutable state. Each incident's state machine is isolated and checkpointer-guarded.
 - **NFR-4 No silent failures:** Every failure is either propagated, logged with error code, or triggers a loud circuit-break into the trace. No `except: pass`.
 - **NFR-5 Reproducibility:** Benchmark runs are deterministic on fixed MCP mock data (fixed fixture set, seeded randomness).
+- **NFR-6 Runtime dependency:** Redis is a hard runtime dependency. If Redis is unreachable, new alerts are refused with `503` (fail loud); the system never runs in a "no-dedupe" degraded mode.
 
 ## 5. Data Contracts
 
@@ -159,7 +161,7 @@ Validation rules:
 - Schema violation → the plan is rejected and the run fails loud (defect, not warning).
 
 ### 5.4 Human approval command contract
-How the operator's decision reaches the gate (FR-5). Plain HTTP POST — the dashboard's real-time stream is for *watching*; decisions are normal request/response.
+How the operator's decision reaches the gate (FR-5). Two accepted channels — an HTTP POST (canonical API contract, testable without a dashboard) and a WebSocket message carrying the same JSON (design D-1).
 
 - Endpoint: `POST /incidents/{incident_id}/approval`
 - Request body (strict JSON):
@@ -174,6 +176,7 @@ How the operator's decision reaches the gate (FR-5). Plain HTTP POST — the das
   - `approve` unlocks `trigger_github_rollback` for that incident and resumes the paused state machine.
   - `reject` ends the pipeline for that incident cleanly (`state=rejected`); no remediation runs.
   - A second decision on the same incident returns `already_decided` and changes nothing (first decision wins).
+  - The same JSON sent as a WebSocket message is equivalent to the POST (same validation, same semantics).
 
 **Acceptance:** Sending `approve` then running the benchmark's rollback-worthy fixture results in the mock rollback tool firing once. Sending `reject` results in no tool firing and `state=rejected`.
 
@@ -194,19 +197,20 @@ How the operator's decision reaches the gate (FR-5). Plain HTTP POST — the das
 
 ## 8. Constraints & Assumptions
 
-- Language/runtime: Python 3.12+, async-first; implementation uses Pydantic v2, FastAPI, LangGraph, a real MCP server (stdlib reference), OpenTelemetry — **all versions pinned after Context7 verification**.
-- Model providers: SLM via local Ollama or Groq; frontier via API. Exact providers are a `design.md` decision; the cascade contract (FR-3) does not depend on the vendor.
+- Language/runtime: Python 3.12+, async-first; implementation uses Pydantic v2, FastAPI, LangGraph, a real MCP server (stdlib reference), OpenTelemetry — **all versions pinned after Context7 verification (AGENTS.md §2)**.
+- **Redis is required at runtime** (queue + dedupe set, NFR-6); local `redis-server` on the reference machine. Install command recorded in `specs/features/webhook-ingest/tasks.md`.
+- Model providers: SLM via local Ollama; frontier via API. The cascade contract (FR-3) does not depend on the vendor.
 - The dashboard is a minimal live view (streaming focus), not a full UI product.
 - Reference machine for NFR-1 is a single local dev machine (Mac/Linux, no GPU assumption); benchmark reports the machine spec.
 
 ## 9. Open Questions (resolved in `design.md`)
 
-1. Transport: **WebSocket vs SSE** for FR-6. Implies different backpressure/persistence choices.
-2. Queue: single-process in-memory queue vs. Redis. (In-memory forces the FR-1 restart caveat; Redis earns its keep only if multi-worker or restart survival is required — see OQ-2 discussion in `design.md`.)
-3. SLM escalation trigger: exact threshold/rule for "ambiguous or high-impact".
-4. Checkpointer persistence: in-memory (SQLite) vs. external store for resume-after-human-review.
-5. Reference frontier model + fallback policy if the frontier model times out (does NFR-1 include model outage?).
+1. Transport: **resolved (design D-1): WebSocket.** Events down + decisions up over one socket; reconnect catch-up required (FR-6).
+2. Queue: **resolved (design D-2): Redis.** Durable queue + seen-set (dedupe survives restart); in-process queue rejected.
+3. SLM escalation trigger: **resolved (design D-4): deterministic rule** — critical hint, confidence < 0.6, or ambiguous flag.
+4. Checkpointer persistence: **resolved (design D-3): in-memory `MemorySaver`**; SQLite marked upgrade.
+5. Reference frontier model + timeout fallback: **resolved (design D-5/D-6): env-configured vendor API; error/timeout → `manual_review`, loud.**
 
 ## 10. Definition of Done (system level)
 
-The project is complete when: all FR-1..FR-8 pass their acceptance checks on the 30-incident benchmark; NFR-1..NFR-5 hold; every non-goal is respected by the implementation; design decisions OQ-1..OQ-5 are recorded and implemented; traces are queryable per incident; and `specs/design.md` + `specs/tasks.md` reflect reality.
+The project is complete when: all FR-1..FR-8 pass their acceptance checks on the 30-incident benchmark; NFR-1..NFR-6 hold; every non-goal is respected by the implementation; design decisions D-1..D-6 are implemented; traces are queryable per incident; and every feature's `spec.md` + `tasks.md` under `specs/features/` reflect reality, with the board `specs/tasks.md` current.

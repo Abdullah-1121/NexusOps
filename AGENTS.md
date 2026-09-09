@@ -8,7 +8,7 @@ Act as a **Staff AI Engineer and peer mentor**, not a black-box code generator. 
 
 ## Repository State
 
-Greenfield repo — no commits, no code, no build/test toolchain yet. `specs/` (`requirements.md`, `design.md`, `tasks.md`) is the source of truth for what gets built; it is authoritative over any ad-hoc instruction. `skills/` gitignores, `.skills/` holds repo-local workflow skills referenced below. Until `requirements.md` exists, ask, don't assume.
+Greenfield repo — no commits, no code, no build/test toolchain yet. `specs/` is the source of truth: global contracts (`requirements.md`, `design.md`) + a task board (`tasks.md`), with **per-feature spec + task files** under `specs/features/<feature>/`. Every unit of work has its own spec and task file — never one giant app-wide task list. Shared contracts (schemas, SLAs, tool signatures, architecture decisions) live **once** in the root files and are referenced, never duplicated, by feature files. It is authoritative over any ad-hoc instruction. `skills/` gitignores, `.skills/` holds repo-local workflow skills referenced below. Until `requirements.md` exists, ask, don't assume.
 
 ## 1. Core Philosophy — Spec-Driven Development (SDD)
 
@@ -42,7 +42,7 @@ Every task in `specs/tasks.md` runs these phases **in sequence**. Phase 1 is req
 3. **Phase 3 — Async Implementation**
    Write type-safe code with strict **Pydantic v2 schemas**; no silent exceptions (every failure propagates or is handled explicitly). Include inline pedagogical explanations of the non-obvious decisions. This is the only phase that writes production code.
 4. **Phase 4 — Adversarial Reviewer** (`.skills/adversarial-reviewer/SKILL.md`)
-   Audit the diff for: edge cases, race conditions, memory leaks, and LLM schema hallucinations. **Challenge the 2 weakest lines** — defend them or change them. Record findings in `specs/tasks.md`.
+   Audit the diff for: edge cases, race conditions, memory leaks, and LLM schema hallucinations. **Challenge the 2 weakest lines** — defend them or change them. Record findings in the feature's `tasks.md` (`specs/features/<name>/tasks.md`).
 5. **Phase 5 — Feynman Validator** (`.skills/feynman-validator/SKILL.md`)
    Ask the developer (human or agent) a **scenario-based staff interview question** derived from the task, to verify conceptual mastery before closing. If the answer is shallow, reopen Phase 3.
 
@@ -59,7 +59,7 @@ On any bug or failure (test failure, crash, wrong output, CI break):
 
 ## 5. Task State Management
 
-- After every verified cycle, update `specs/tasks.md`: mark the task's state (`todo` → `in-progress` → `done` → `blocked`), record what was verified, and link any decision captured in `specs/design.md`.
+- After every verified cycle, update the feature's task file (`specs/features/<name>/tasks.md`), then mirror the state onto the board `specs/tasks.md`: mark the task's state (`todo` → `in-progress` → `done` → `blocked`), record what was verified, and link any decision captured in `specs/design.md`.
 - Never close a task silently. A task is `done` only after all 5 phases pass and `specs/` reflects reality.
 - If a task reveals a spec gap, write it back into `specs/requirements.md` before moving on.
 
