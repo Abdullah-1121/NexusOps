@@ -2,6 +2,9 @@
 
 System context: `specs/requirements.md` §5.2 (tool contracts), FR-2; `specs/design.md` §3 (MCP stage), NG-2 (real protocol, mock backends).
 
+## Phase 1 decision — **APPROVED** (2026-09-08)
+**Pattern A: official `mcp` Python SDK (`FastMCP`), stdio transport.** Compared vs B (hand-rolled JSON-RPC/stdio) and C (plain LangGraph `@tool`, no protocol). C rejected by contract (NG-2, §8 "real MCP server"); B rejected (owning spec version negotiation forever = 3am debt). Motivating considerations: vendor-managed handshake/version negotiation, typed structured errors out of the box (needed for §5.2 "no data" vs "doesn't exist"), and the MCP boundary keeps the mock→real backend swap viable (design §6 NG-2). Stdio because the state machine spawns the server as a local subprocess — no network/auth surface. Risk recorded: FastMCP API verified via Context7 before any code (AGENTS.md §2).
+
 ## What this feature does (in scope)
 - Standalone MCP server exposing exactly three tools:
   - `fetch_service_logs(service_name, timestamp_window)`

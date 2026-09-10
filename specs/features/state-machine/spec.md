@@ -2,6 +2,9 @@
 
 System context: `specs/requirements.md` FR-3/FR-4/FR-5, §5.3; `specs/design.md` D-3/D-4/D-6, NFR-3/NFR-4.
 
+## Phase 1 decision — **APPROVED** (2026-09-08)
+**Pattern B: thread-per-incident via the checkpointer** — one compiled LangGraph StateGraph, each incident under `thread_id = incident_id`, MemorySaver checkpointer stores per-thread state, gate is an `interrupt()`. Rejected A (instance-per-incident: manual resume dict plumbing after the gate) and C (hand-rolled pipeline: reinvents checkpointing, conflicts with approved D-3). B is the SDK-native human-in-the-loop pattern: state isolation (NFR-3) via thread key, resume = one invoke with same thread_id. Risk: interrupt()/MemorySaver API verified via Context7 before code.
+
 ## What this feature does (in scope)
 - LangGraph StateGraph running the 6-step flow **per incident** (isolated state — NFR-3):
   1. **SLM classify** (local Ollama): severity, affected_service, `triage_confidence`, `ambiguous`.

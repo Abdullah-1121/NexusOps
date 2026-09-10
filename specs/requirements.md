@@ -199,7 +199,7 @@ How the operator's decision reaches the gate (FR-5). Two accepted channels — a
 
 - Language/runtime: Python 3.12+, async-first; implementation uses Pydantic v2, FastAPI, LangGraph, a real MCP server (stdlib reference), OpenTelemetry — **all versions pinned after Context7 verification (AGENTS.md §2)**.
 - **Redis is required at runtime** (queue + dedupe set, NFR-6); local `redis-server` on the reference machine. Install command recorded in `specs/features/webhook-ingest/tasks.md`.
-- Model providers: SLM via local Ollama; frontier via API. The cascade contract (FR-3) does not depend on the vendor.
+- Model providers: **open-source models via OpenRouter** (OpenAI-compatible API); SLM and frontier are both env-configured (`NEXUSOPS_SLM_MODEL`, `NEXUSOPS_FRONTIER_MODEL`, `NEXUSOPS_OPENROUTER_API_KEY`). Design D-5. No local model runtime.
 - The dashboard is a minimal live view (streaming focus), not a full UI product.
 - Reference machine for NFR-1 is a single local dev machine (Mac/Linux, no GPU assumption); benchmark reports the machine spec.
 

@@ -39,9 +39,10 @@ The SLM must output `triage_confidence: float` (0..1) and `ambiguous: bool` on e
 
 **Why:** predictable, zero cost, unit-testable — the benchmark asserts exactly which fixtures escalate. Escalation must never be a fuzzy judgment call.
 
-### D-5 Model providers
-- **SLM:** local Ollama (small model on the reference machine) — free, no network flake, reproducible benchmark (NFR-5).
-- **Frontier:** vendor API behind `NEXUSOPS_FRONTIER_*` env vars. Exact model/version pinned in feature tasks after Context7 verification (AGENTS.md §2).
+### D-5 Model providers (revised 2026-09-08: OpenRouter, not Ollama)
+- **Both SLM and frontier** are open-source models served via **OpenRouter**, an OpenAI-compatible API. Env-gated: `NEXUSOPS_OPENROUTER_API_KEY`, `NEXUSOPS_SLM_MODEL` (small/cheap/fast), `NEXUSOPS_FRONTIER_MODEL` (large/capable). Exact model IDs pinned later in feature tasks after Context7 verification from the OpenRouter catalog.
+- Committed same as before: cheap SLM for routine triage, expensive frontier only on escalation (D-4). The cascade contract (FR-3) does not depend on the vendor — a swap is a config change.
+- **Why not Ollama:** user decision 2026-09-08 — no local model runtime; open-source models via hosted API keep the SLM/frontier asymmetry as a pure config difference (model ID), reproducibly benchmarkable (NFR-5) with no local-GPU assumption.
 
 ### D-6 Failure policy — the safe-degrade rule
 If the SLM or frontier model errors or times out during the evidence/reasoning stages, the incident does **not** proceed to the gate with a partial plan. It transitions to **`state=manual_review`**, streams "AI unavailable — human review required" to the dashboard, and stops. No silent fallback, no half-baked plan — failure is always loud (NFR-4).
@@ -130,7 +131,7 @@ If the SLM or frontier model errors or times out during the evidence/reasoning s
 
 - **D-2:** ack/lease reprocessing of lost in-flight incidents — when crash survival of in-flight work is required.
 - **D-3:** SQLite checkpointer — when losing a human-waited incident on restart is unacceptable.
-- **D-5:** exact frontier vendor/model — pinned in feature tasks after Context7 verification.
+- **D-5:** exact SLM/frontier model IDs on OpenRouter — pinned after a live API call in the first benchmark/triage run; env-gated so any catalog model is a config change.
 - **NG-1:** no unattended remediation — permanent boundary, enforced in the gate.
 - **NG-2:** mock tool backends — MCP protocol is real; only the backend data is fake, keeping the tool interface swap-for-real in place.
 
