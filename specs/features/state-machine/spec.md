@@ -7,7 +7,7 @@ System context: `specs/requirements.md` FR-3/FR-4/FR-5, §5.3; `specs/design.md`
 
 ## What this feature does (in scope)
 - LangGraph StateGraph running the 6-step flow **per incident** (isolated state — NFR-3):
-  1. **SLM classify** (local Ollama): severity, affected_service, `triage_confidence`, `ambiguous`.
+  1. **SLM classify** (OpenRouter SLM, D-5): severity, affected_service, `triage_confidence`, `ambiguous`.
   2. **Escalation rule** (D-4): critical hint OR confidence < 0.6 OR ambiguous → frontier.
   3. **MCP evidence gathering** (calls feature-2 server).
   4. **RCA** → remediation plan (§5.3) — strict JSON or fail loud.

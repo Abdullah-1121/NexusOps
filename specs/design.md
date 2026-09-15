@@ -91,7 +91,7 @@ If the SLM or frontier model errors or times out during the evidence/reasoning s
 | **FastAPI receiver** | Accept, validate, dedupe, enqueue | 422 on malformed; dedupe key = `incident_id` (Redis SET) |
 | **Redis queue + worker** | Hold + consume the incident tray | LPUSH/BRPOP; each incident → own graph instance (NFR-3) |
 | **LangGraph StateGraph** | Enforce the 6-step flow, per incident | deterministic transitions; no loop paths |
-| **SLM stage** | First-pass classification + confidence + ambiguous flag | local Ollama |
+| **SLM stage** | First-pass classification + confidence + ambiguous flag | OpenRouter SLM (D-5) |
 | **Escalation rule** | Decide SLM→frontier per D-4 | plain function, unit-tested |
 | **MCP stage** | Call the 3 mock tools; record args+results in trace | real MCP protocol, mocked backends (NG-2) |
 | **RCA stage** | Produce remediation plan §5.3 | SLM or frontier; strict JSON or fail loud |
@@ -137,7 +137,7 @@ If the SLM or frontier model errors or times out during the evidence/reasoning s
 
 ## 7. Open Risk Register
 
-- **R-1:** Local SLM on CPU must meet NFR-1 (P95 < 2.5s, SLM-only path). Mitigation: small model + short classifier prompt + structured output; measure in the FIRST benchmark run.
+- **R-1:** SLM latency (hosted OpenRouter, D-5) must meet NFR-1 (P95 < 2.5s, SLM-only path). Mitigation: small/cheap model + short classifier prompt + structured output; measured in EVERY benchmark run (default mode).
 - **R-2:** Frontier-call latency is vendor-bound. Mitigation: excluded from NFR-1; reported separately; timeouts route to `manual_review`.
 - **R-3:** WebSocket ordering + reconnect catch-up must stay consistent — a reconnecting client may have missed events mid-drop. Mitigation: per-incident event replay on connect (FR-6); load-test at 30 incidents in the benchmark.
 - **R-4:** Redis is an extra runtime dependency for every test/benchmark run. Mitigation: NFR-6 refuses degraded operation; install command in `specs/features/webhook-ingest/tasks.md`; `redis-server` started as part of any run instructions.

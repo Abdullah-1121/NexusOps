@@ -90,7 +90,7 @@ Numbering is `FR-<n>`. Each carries an **acceptance check** (how we prove it's s
 **Acceptance:** A single incident produces a complete trace with all steps and durations.
 
 ### FR-8 — Automated benchmark (regression harness)
-- A DeepEval-based harness runs **30 synthetic incidents**, scores each against a ground-truth rubric (severity, root cause, plan actionability), and reports aggregate pass rate, P95 latency, token cost, and MTTR.
+- An LLM-as-judge harness (OpenRouter structured output, D-5; Phase-1 revised 2026-09-08 — DeepEval dependency dropped) runs **30 synthetic incidents**, scores each against a ground-truth rubric (severity, root cause, plan actionability, gate compliance), and reports aggregate pass rate, P95 latency, token cost, and MTTR.
 
 **Acceptance:** `benchmark` command exits non-zero on any rubric failure or SLA breach; outputs a machine-readable report.
 
