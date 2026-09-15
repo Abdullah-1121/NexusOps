@@ -8,3 +8,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Benchmark scratch (regenerable)
+out.json
+live_bench_report.json
+live_bench_err.log
