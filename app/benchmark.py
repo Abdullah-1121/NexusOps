@@ -258,6 +258,87 @@ async def drive_incident(graph, alert: dict, operator: Callable, fixture: Fixtur
     )
 
 
+# --- offline checkpoint (record the pipeline, judge in a separate pass) ------
+
+
+def _fixture_to_dict(f: Fixture) -> dict:
+    return {"alert": f.alert, "ground": f.ground, "delivered": f.delivered}
+
+
+def result_to_dict(r: IncidentResult) -> dict:
+    return {
+        "incident_id": r.incident_id,
+        "fixture": _fixture_to_dict(r.fixture) if r.fixture else None,
+        "severity": r.severity,
+        "plan": r.plan,
+        "terminal": r.terminal,
+        "t_gate_ms": r.t_gate_ms,
+        "t_resolve_ms": r.t_resolve_ms,
+        "escalated": r.escalated,
+        "manual_review_reason": r.manual_review_reason,
+        "decision": r.decision,
+        "plan_ok": r.plan_ok,
+    }
+
+
+def result_from_dict(d: dict) -> IncidentResult:
+    fixture = d.get("fixture")
+    return IncidentResult(
+        incident_id=d["incident_id"],
+        fixture=Fixture(**fixture) if fixture else None,
+        severity=d.get("severity"),
+        plan=d.get("plan"),
+        terminal=d.get("terminal"),
+        t_gate_ms=d.get("t_gate_ms"),
+        t_resolve_ms=d.get("t_resolve_ms"),
+        escalated=d.get("escalated", False),
+        manual_review_reason=d.get("manual_review_reason"),
+        decision=d.get("decision"),
+        plan_ok=d.get("plan_ok", False),
+    )
+
+
+def save_checkpoint(path: str, results: list[IncidentResult],
+                    fixtures: list[Fixture], sink: MetricSink) -> None:
+    payload = {
+        "fixtures": [_fixture_to_dict(f) for f in fixtures],
+        "results": [result_to_dict(r) for r in results],
+        "sink": {
+            "model_calls": sink.model_calls,
+            "rollback_calls": sink.rollback_calls,
+            "evidence_calls": sink.evidence_calls,
+        },
+    }
+    with open(path, "w") as fh:
+        json.dump(payload, fh, indent=2)
+
+
+def load_checkpoint(path: str) -> tuple[list[Fixture], list[IncidentResult], MetricSink]:
+    """Reverse of save_checkpoint. All fields are JSON-safe dicts/strings/floats."""
+    with open(path) as fh:
+        payload = json.load(fh)
+    fixtures = [Fixture(**f) for f in payload["fixtures"]]
+    results = [result_from_dict(r) for r in payload["results"]]
+    sink = MetricSink(**payload["sink"])
+    return fixtures, results, sink
+
+
+async def judge_checkpoint(path: str) -> dict:
+    """Phase B: grade a recorded phase-A checkpoint, no Redis, no pipeline.
+
+    The judge passes are what free-tier rate-limits kill; by replaying the
+    recorded outputs we can retry just the judging until the provider
+    cooperates — the expensive pipeline work is never re-done."""
+    _fixtures, results, sink = load_checkpoint(path)
+
+    async def judge(messages, model_env, schema):
+        return await complete_json(messages, model_env=model_env, timeout_s=90.0, json_schema=schema)
+
+    judge = _retry_model(judge)
+    reviews = await _judge_all(judge, results)
+    return build_report(results, _fixtures, sink, reviews, mode="live")
+
+
 def _plan_ok(plan: dict | None) -> bool:
     """NFR-2: remediation plan is a strict §5.3 dict. Deterministic assert."""
     if not isinstance(plan, dict):
@@ -514,7 +595,11 @@ def exit_code(report: dict) -> int:
 # --- CLI ---------------------------------------------------------------------
 
 
-async def _run(mode: str) -> dict:
+async def _run(mode: str, record: str | None = None) -> dict:
+    """Run the pipeline. record=<path> stops after consumption (phase A) and
+    writes a checkpoint so the judge can run separately (phase B) — see
+    judge_checkpoint. The classify and judge phases never share one burst, so
+    free-tier rate-limits stop one phase failing because the other flooded it."""
     fixtures = build_fixtures()
     sink = MetricSink()
 
@@ -569,6 +654,15 @@ async def _run(mode: str) -> dict:
         deduped = await redis.sismember("nexusops:incidents:seen", "dup-01")
         if not deduped:
             raise RuntimeError("dup-01 not present in ingest seen-set — dedupe broken")
+    if record is not None:
+        save_checkpoint(record, results, fixtures, sink)
+        return {
+            **build_report(results, fixtures, sink, reviews=[], mode=mode),
+            "run": {
+                "mode": mode,
+                "phase": f"A — recorded; run the judge pass: --judge {record}",
+            },
+        }
     reviews = await _judge_all(judge, results)
     return build_report(results, fixtures, sink, reviews, mode=mode)
 
@@ -593,11 +687,20 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(prog="nexusops-benchmark")
     parser.add_argument("--smoke", action="store_true", help="deterministic fakes, zero tokens, CI-safe")
+    parser.add_argument("--record", metavar="PATH",
+                        help="phase A: run the live pipeline, save outputs to PATH, stop before judging")
+    parser.add_argument("--judge", metavar="PATH",
+                        help="phase B: grade a recorded phase-A checkpoint (no Redis, replayable)")
     args = parser.parse_args(argv)
-    mode = "smoke" if args.smoke else "live"
-    report = asyncio.run(_run(mode))
+    if args.judge:
+        if args.record or args.smoke:
+            parser.error("--judge is a separate pass; use it alone.")
+        report = asyncio.run(judge_checkpoint(args.judge))
+    else:
+        mode = "smoke" if args.smoke else "live"
+        report = asyncio.run(_run(mode, record=args.record))
     print(json.dumps(report, indent=2))
-    return exit_code(report)
+    return exit_code(report) if not args.record else 0
 
 
 if __name__ == "__main__":

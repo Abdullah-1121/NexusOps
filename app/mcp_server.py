@@ -21,7 +21,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 mcp = MCPServer("nexusops")
 
 # Mock backend data (deterministic per NFR-5: fixed seed, fixed fixtures).
-SERVICES = {"auth", "payments", "catalog", "worker"}
+SERVICES = {"auth", "payments", "catalog", "worker", "api", "db", "search", "queue", "ghost", "orphan", "dangling"}
+SILENT_SERVICES = {"ghost", "orphan", "dangling"}
 METRICS = {"http_requests_total", "error_rate", "p99_latency_ms"}
 
 # Tool-call telemetry: every call recorded, consumers (benchmark) read it.
@@ -89,9 +90,11 @@ def fetch_service_logs(service_name: str, timestamp_window: dict) -> dict:
     if service_name not in SERVICES:
         raise ToolError(f"service '{service_name}' does not exist")
     start, end = _parse_window(timestamp_window)
-    # Mock fixture rule: catalog has no activity today (the "empty window" case);
-    # every other service has deterministic logs. One rule, easy to read.
-    if service_name == "catalog" and start.date() == _now().date():
+    # Deterministic fixtures (F5): known-but-silent services (their incident
+    # story is "source gone dark / orphaned / dangling account") exist but have
+    # no logs in any window; catalog additionally has no activity today.
+    # Every other known service gets deterministic logs. Absence != nonexistence.
+    if service_name in SILENT_SERVICES or (service_name == "catalog" and start.date() == _now().date()):
         return {"logs": []}
     return {"logs": _synthesize_logs(service_name, start, end, count=12)}
 

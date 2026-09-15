@@ -37,6 +37,18 @@ Three bugs surfaced only by real traffic; all fixed, each with a regression test
 **Live result (5th run, free judge `nvidia/nemotron-3-ultra-550b-a55b:free`):** all 29 → `manual_review` (free-tier 429 rate-limit on classify → D-6, as designed). `all_pass`: false, honest. Harness + pipeline proven live end-to-end; the model boundary (unfunded key) is the failure. **Re-run with a funded key for a meaningful semantic verdict:** `scripts/run_live_benchmark.py` (also: live `judge` timeout raised 20→90s, single-incident judge schema round-trip verified OK).
 Entry point added: `scripts/run_live_benchmark.py` (webhook-seeds Redis → real worker → OpenRouter → judge).
 
+## Phase 4e — two-phase offline replay (2026-09-15)
+Free-tier judge bursts collide with classify traffic in one rate-limit window → a long wall of 429s makes the run report all-fail even though the pipeline succeeded. Split the benchmark:
+- **Phase A `--record PATH`** — pipeline + evidence + gate only; saves every `IncidentResult` (+ fixtures + token/call ledger) to a JSON checkpoint and stops before judging.
+- **Phase B `--judge PATH`** — loads a checkpoint and grades it with the frontier judge; no Redis, no pipeline work, infinitely replayable until the provider cooperates.
+Checkpoint round-trip is guarded by a test (`test_checkpoint_round_trips_without_losing_fields`). Nothing about the single-pass default changed (`--record`/`--judge` are the free-tier escape hatch; a funded key just runs `scripts/run_live_benchmark` as before).
+
+## Phase 4d — live-run findings (2026-09-14, second free-tier run, SLM fixed)
+Full pipeline **proven live for real**: 29/29 consumed `200 OK`, gate auto-operator resumed every parked gate, 3 rollbacks + 14 evidence calls executed, token accounting live (28,560 SLM tokens), honest NFR-1 measured. Two defects from this run:
+1. **F2↔F5 service-name contract drift:** fixtures run on `db/search/queue/api/ghost/orphan/dangling`; the synthetic evidence store only knew `{auth,payments,catalog,worker}` → every live `fetch_service_logs` loud-failed and starved RCA. Fixed: `SERVICES` union + `SILENT_SERVICES` (ghost/orphan/dangling exist-but-silent, honoring their "gone dark" stories), plus a guardrail test asserting every fixture service is queryable.
+2. **`openrouter/auto` is not free:** routing the SLM through it selects a paid model → `402` storm, entire run to `manual_review`. SLM + judge now pinned to explicit `:free` models in `.env`.
+Open provider caveats (not code): free-tier judge call phase rate-limits (`429` storm → judge default-fails everything, `pass_rate 0` — that's a *judge failure*, not a model-quality verdict), and free-tier SLM P95 ≈ 345 s vs NFR-1 2500 ms budget — latency is a provider property; a funded key is the only cure for both.
+
 ## Phase 5 — Feynman (2026-09-08)
 **Answer incorrect, lesson + two fixes captured.** Question: live report `all_pass:true` but zero SLM tokens and all `escalated:true`. Developer answered "the model threw a silent error." Corrected: a model error is never silent (D-6 → manual_review → all_pass false), so the silence was *harness instrumentation*, not the model. Led directly to findings 4 & 5 above. Feature closed with the fixed defects and their regression tests; concept gap recorded.
 

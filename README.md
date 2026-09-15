@@ -200,6 +200,10 @@ resumes the correct parked state-machine thread.
 
 # Live — real models against real Redis (see scripts/run_live_benchmark.py)
 .venv/bin/python -m scripts.run_live_benchmark
+
+# Two-phase replay (rate-limit escape hatch): record the pipeline, judge later
+.venv/bin/python -m scripts.run_live_benchmark --record out.json   # phase A: pipeline only
+.venv/bin/python -m scripts.run_live_benchmark --judge out.json    # phase B: grade the recording
 ```
 
 The live driver seeds 30 synthetic incidents *through the real ingestion

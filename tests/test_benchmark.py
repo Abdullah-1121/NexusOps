@@ -324,3 +324,35 @@ def test_smoke_judge_contract():
         assert set(metric) == {"verdict", "score", "reason"}
         assert isinstance(metric["verdict"], bool)
     assert all(m["verdict"] for m in out.values())
+
+
+def test_checkpoint_round_trips_without_losing_fields(tmp_path):
+    fixtures = bench.build_fixtures()
+    results = []
+    for f in fixtures:
+        if not f.delivered:
+            continue
+        results.append(bench.IncidentResult(
+            incident_id=f.alert["incident_id"], fixture=f, severity=f.ground["severity"],
+            plan=_plan(f.ground), terminal="resolved", t_gate_ms=12.5, t_resolve_ms=20.0,
+            escalated=f.alert["incident_id"].startswith("a-"),
+            manual_review_reason=None if f.alert["incident_id"] != "i-01" else "judge-storm",
+            decision={"decision": "approve"}, plan_ok=True,
+        ))
+    sink = bench.MetricSink(model_calls=[{"model": "m", "usage": {"total_tokens": 7}}],
+                            rollback_calls=["sha1"], evidence_calls=["c-01"])
+    path = str(tmp_path / "phase_a.json")
+    bench.save_checkpoint(path, results, fixtures, sink)
+
+    got_f, got_r, got_s = bench.load_checkpoint(path)
+    assert [f.alert["incident_id"] for f in got_f] == [f.alert["incident_id"] for f in fixtures]
+    assert [r.incident_id for r in got_r] == [r.incident_id for r in results]
+    for a, b in zip(results, got_r):
+        assert (a.incident_id, a.severity, a.terminal, a.t_gate_ms, a.t_resolve_ms,
+                a.escalated, a.manual_review_reason, a.plan, a.decision, a.plan_ok) == \
+               (b.incident_id, b.severity, b.terminal, b.t_gate_ms, b.t_resolve_ms,
+                b.escalated, b.manual_review_reason, b.plan, b.decision, b.plan_ok)
+        assert a.fixture.ground == b.fixture.ground
+    assert got_s.model_calls == sink.model_calls
+    assert got_s.rollback_calls == ["sha1"]
+    assert got_s.evidence_calls == ["c-01"]

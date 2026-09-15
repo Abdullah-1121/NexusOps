@@ -86,3 +86,17 @@ def test_every_call_is_trace_visible():
         "query_prometheus_metrics",
         "trigger_github_rollback",
     ]
+
+
+def test_benchmark_fixture_services_are_known_to_evidence_store():
+    """Contract guard (live-run finding): F5 fixtures and the F2 synthetic store
+    must agree on service names, or live evidence calls loud-fail for every
+    incident and starve the RCA. Silence ≠ nonexistence for the drift services."""
+    from app.benchmark import build_fixtures
+
+    for f in build_fixtures():
+        service = f.alert["service"]
+        if service in {"ghost", "orphan", "dangling"}:
+            assert fetch_service_logs(service, WINDOW()) == {"logs": []}
+        else:
+            assert isinstance(fetch_service_logs(service, WINDOW())["logs"], list)
