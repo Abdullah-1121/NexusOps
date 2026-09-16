@@ -47,6 +47,13 @@ The SLM must output `triage_confidence: float` (0..1) and `ambiguous: bool` on e
 ### D-6 Failure policy — the safe-degrade rule
 If the SLM or frontier model errors or times out during the evidence/reasoning stages, the incident does **not** proceed to the gate with a partial plan. It transitions to **`state=manual_review`**, streams "AI unavailable — human review required" to the dashboard, and stops. No silent fallback, no half-baked plan — failure is always loud (NFR-4).
 
+### D-7 LLM tracing & evaluation — OpenTelemetry GenAI (2026-09-16)
+- **Chosen over OpenLLMetry and Langfuse:** user directive — industry-standard OpenTelemetry only. Instrument the single choke point `complete_json` in `app/models.py` (every SLM classify, frontier RCA/plan, and judge call passes through it) so one piece of plumbing traces all three.
+- Span contract (GenAI semantic conventions, pinned literals — the Python `gen_ai` semconv module is `_incubating`): `llm.chat.completions` with `gen_ai.system` (base-URL hostname), `gen_ai.request.model`, `gen_ai.usage.input_tokens`/`output_tokens`, `gen_ai.response.model`/`id`; errors set ERROR status + `record_exception`. Negative-attribute rule withheld — response-model/id on success only.
+- Internal-parent spans per incident: `nexusops.incident` around `drive_incident` (`app.incident.id`); the LLM judge opens `llm.judge` with `eval.<metric>` verdict attributes — **evaluation rides the trace** (evaluation-as-trace), so a trace backend doubles as the eval record.
+- Exporter contract: standard env — `OTEL_EXPORTER_OTLP_ENDPOINT` set → OTLP/HTTP exporter; unset → `ConsoleSpanExporter` (harness runs with zero infra). `service.name` from `OTEL_SERVICE_NAME`, default `nexusops`. `init_tracing()` is idempotent; tests inject `InMemorySpanExporter` via a session provider in `tests/conftest.py` (OTel `set_tracer_provider` is one-shot — conftest installs first so the whole suite shares one exporter).
+- Context7 VERIFIED `/open-telemetry/opentelemetry-python` 1.44.0 (2026-09-16) — provider/BatchSpanProcessor/exporter API signatures confirmed. Deps: `opentelemetry-sdk`, `opentelemetry-api`, `opentelemetry-exporter-otlp-proto-http`.
+
 ## 2. System Architecture
 
 ```

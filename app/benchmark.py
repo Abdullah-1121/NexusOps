@@ -32,6 +32,7 @@ from langgraph.types import Command
 
 from app.models import ModelError, complete_json
 from app.state_machine import build_graph
+from app.tracing import get_tracer
 
 # --- B-1 fixtures -----------------------------------------------------------
 
@@ -227,8 +228,14 @@ async def drive_incident(graph, alert: dict, operator: Callable, fixture: Fixtur
     fixture's expected decision, final state captured at the checkpointer."""
     t0 = time.monotonic()
     config = {"configurable": {"thread_id": alert["incident_id"]}}
-    await graph.ainvoke({"incident_id": alert["incident_id"], "alert": alert}, config)
-    final = graph.get_state(config).values
+    # One parent trace per incident: classify/RCA/plan LLM spans (they run
+    # inside ainvoke) nest under it, so a judge/observability backend shows the
+    # whole fan-out of one alert as a single flame graph.
+    with get_tracer().start_as_current_span(
+        "nexusops.incident", attributes={"app.incident.id": alert["incident_id"]}
+    ):
+        await graph.ainvoke({"incident_id": alert["incident_id"], "alert": alert}, config)
+        final = graph.get_state(config).values
 
     t_gate = None
     if final.get("terminal") is None and not final.get("manual_review_reason"):
@@ -339,15 +346,19 @@ async def judge_checkpoint(path: str) -> dict:
     return build_report(results, _fixtures, sink, reviews, mode="live")
 
 
+PLAN_REQUIRED_KEYS = frozenset({
+    "severity", "affected_service", "root_cause_hypothesis", "confidence",
+    "remediation_steps", "requires_approval", "evidence",
+})
+"""NFR-2 (§5.3) plan contract — single source of truth. `_plan_ok` checks it and
+the guardrail test asserts RCA_SCHEMA cannot drift away from it."""
+
+
 def _plan_ok(plan: dict | None) -> bool:
     """NFR-2: remediation plan is a strict §5.3 dict. Deterministic assert."""
     if not isinstance(plan, dict):
         return False
-    required = {
-        "severity", "affected_service", "root_cause_hypothesis", "confidence",
-        "remediation_steps", "requires_approval", "evidence",
-    }
-    if not required <= set(plan):
+    if not PLAN_REQUIRED_KEYS <= set(plan):
         return False
     steps = plan["remediation_steps"]
     return (
@@ -471,7 +482,20 @@ async def judge_result(judge: Callable, result: IncidentResult) -> dict:
             ),
         },
     ]
-    return await judge(messages, "NEXUSOPS_FRONTIER_MODEL", JUDGE_SCHEMA)
+    return await _judged_span(result.incident_id, judge, messages, JUDGE_SCHEMA)
+
+
+async def _judged_span(incident_id: str, judge: Callable, messages: list[dict], schema: dict) -> dict:
+    """Open the judge span, grade, and attach each eval metric so the trace the
+    observability backend keeps IS the benchmark evaluation (evaluation-as-trace)."""
+    tracer = get_tracer()
+    with tracer.start_as_current_span(
+        "llm.judge", attributes={"app.incident.id": incident_id}
+    ) as span:
+        review = await judge(messages, "NEXUSOPS_FRONTIER_MODEL", schema)
+        for metric in JUDGE_METRICS:
+            span.set_attribute(f"eval.{metric}", review.get(metric, {}).get("verdict", False))
+        return review
 
 
 async def _judge_all(judge: Callable, results: list[IncidentResult]) -> list[dict]:
@@ -575,6 +599,9 @@ def build_report(results: list[IncidentResult], fixtures: list[Fixture], sink: M
         "tool_calls": {"rollback": len(sink.rollback_calls), "evidence": len(sink.evidence_calls)},
         "manual_review": manual,
         "all_pass": all_pass,
+        # the per-incident verdicts+reasons the docstring promises the report
+        # ships: severity/root_cause/plan/gate for every incident, human-readable
+        "reviews": {r.incident_id: review for r, review in zip(results, reviews)},
         "metric_pass_counts": {
             m: sum(1 for r in reviews if r[m]["verdict"])
             for m in JUDGE_METRICS

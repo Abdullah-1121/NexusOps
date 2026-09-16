@@ -8,7 +8,7 @@ import json
 import pytest
 
 from app import benchmark as bench
-from app.models import ModelError
+from app.models import ModelError, RCA_SCHEMA
 
 ALERT_FIELDS = ("severity", "affected_service", "root_cause_hypothesis", "confidence",
                 "remediation_steps", "requires_approval", "evidence")
@@ -164,6 +164,15 @@ def test_plan_ok_enforces_nfr2_schema():
     assert not bench._plan_ok({"severity": "x", "affected_service": "s", "root_cause_hypothesis": "r",
                                "confidence": 0.9, "remediation_steps": None,
                                "requires_approval": True, "evidence": []})
+
+
+def test_plan_ok_and_rca_schema_cannot_drift():
+    # 2026-09-16 regression: RCA_SCHEMA lacked severity/affected_service while
+    # _plan_ok required them, so every plan failed NFR-2 and poisoned the
+    # judge's plan_actionability/gate_compliance scores — deterministically, for
+    # 100% of incidents. The two contracts must stay key-aligned by construction.
+    assert bench.PLAN_REQUIRED_KEYS <= set(RCA_SCHEMA["required"])
+    assert bench.PLAN_REQUIRED_KEYS <= set(RCA_SCHEMA["properties"])
 
 
 def test_report_aggregates_and_passes():

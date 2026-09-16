@@ -20,6 +20,18 @@ from pathlib import Path
 from typing import Callable
 
 import httpx
+from opentelemetry import trace
+
+from app.tracing import (
+    GEN_AI_REQUEST_MODEL,
+    GEN_AI_RESPONSE_ID,
+    GEN_AI_RESPONSE_MODEL,
+    GEN_AI_SYSTEM,
+    GEN_AI_USAGE_INPUT_TOKENS,
+    GEN_AI_USAGE_OUTPUT_TOKENS,
+    get_tracer,
+    llm_system,
+)
 
 OpenRouterURL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -117,6 +129,26 @@ async def complete_json(
             "json_schema": {"name": "response", "strict": True, "schema": json_schema},
         },
     }
+    # Every model call in the system (D-5 choke point) is one gen_ai.* span:
+    # classify, RCA/plan, and judge traces show up in one flame graph feed.
+    tracer = get_tracer()
+    with tracer.start_as_current_span(
+        "llm.chat.completions",
+        attributes={GEN_AI_SYSTEM: llm_system(base), GEN_AI_REQUEST_MODEL: model},
+    ) as span:
+        try:
+            return await _chat(api_key, url, payload, model, timeout_s, usage_sink)
+        except Exception as exc:
+            span.set_attribute("error.type", type(exc).__name__)
+            span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
+            span.record_exception(exc)
+            raise
+
+
+async def _chat(
+    api_key: str, url: str, payload: dict, model: str, timeout_s: float,
+    usage_sink: Callable[[str, dict], None] | None,
+) -> dict:
     async with httpx.AsyncClient(timeout=timeout_s) as client:
         try:
             response = await client.post(
@@ -144,6 +176,7 @@ async def complete_json(
         raise ModelError(f"OpenRouter returned no completion for {model}: {body}")
     if usage_sink is not None:
         usage_sink(model, body.get("usage", {}))
+    _span_attrs(body, model)
     content = body["choices"][0]["message"]["content"]
     if not isinstance(content, str):
         # 200 with content=None/[] (free-tier/rationing responses) is still a
@@ -155,6 +188,17 @@ async def complete_json(
             retryable=True,
         )
     return _enforce_json(content, model)
+
+
+def _span_attrs(body: dict, model: str) -> None:
+    """Attach token usage + completion metadata to the in-flight gen_ai span."""
+    span = trace.get_current_span()
+    usage = body.get("usage") or {}
+    span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, usage.get("prompt_tokens", 0))
+    span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, usage.get("completion_tokens", 0))
+    span.set_attribute(GEN_AI_RESPONSE_MODEL, body.get("model") or model)
+    if body.get("id"):
+        span.set_attribute(GEN_AI_RESPONSE_ID, body["id"])
 
 
 # Contracts the caller must provide; documented here, owned by callers' schemas.
@@ -173,6 +217,8 @@ CONFIDENCE_SCHEMA = {
 RCA_SCHEMA = {
     "type": "object",
     "properties": {
+        "severity": {"type": "string", "enum": ["critical", "warning", "info"]},
+        "affected_service": {"type": "string"},
         "root_cause_hypothesis": {"type": "string"},
         "confidence": {"type": "number"},
         "remediation_steps": {
@@ -192,6 +238,8 @@ RCA_SCHEMA = {
         "evidence": {"type": "array", "items": {"type": "string"}},
     },
     "required": [
+        "severity",
+        "affected_service",
         "root_cause_hypothesis",
         "confidence",
         "remediation_steps",

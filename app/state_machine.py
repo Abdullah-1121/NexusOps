@@ -119,7 +119,9 @@ def make_rca_node(rca: ModelFn) -> Callable:
                         "role": "user",
                         "content": (
                             "Produce an RFC3339-aware remediation plan (strict JSON per schema) "
-                            "for this incident + evidence. Incident: "
+                            "for this incident + evidence. Reflect the incident's classified "
+                            f"severity={state.get('severity')!r} affected_service={state.get('affected_service')!r} "
+                            "in the plan fields of the same name. Incident: "
                             f"{json.dumps(state['alert'])} Evidence: {json.dumps(state['evidence'])}"
                         ),
                     }
