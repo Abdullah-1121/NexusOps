@@ -201,6 +201,30 @@ def test_report_aggregates_and_passes():
     assert bench.exit_code(report) == 0
 
 
+def test_judge_outage_is_inconclusive_not_a_low_score():
+    # 2026-09-16 live finding: 22/29 judge calls 429'd on the free tier and their
+    # all-false defaults dragged pass_rate toward 0 as if the model were far worse
+    # than the 7 that actually graded showed. A grader outage must be visible, not
+    # averaged into the score.
+    fixtures = bench.build_fixtures()
+    f = next(x for x in fixtures if x.delivered)
+    good_res = bench.IncidentResult(
+        incident_id=f.alert["incident_id"], fixture=f, severity=f.ground["severity"],
+        plan=_plan(f.ground), terminal="resolved", t_gate_ms=100.0, t_resolve_ms=120.0,
+        escalated=False, manual_review_reason=None, decision={"decision": "approve"}, plan_ok=True,
+    )
+    outage = {m: {"verdict": False, "score": 0.0, "reason": f"{bench.JUDGE_FAILURE_PREFIX}HTTP 429"}
+              for m in bench.JUDGE_METRICS}
+    good = asyncio.run(_fake_judge(good_res))
+    report = bench.build_report([good_res], fixtures, bench.MetricSink(), [good, outage], mode="test")
+    assert report["judge_failures"] == 1
+    assert report["graded"] == 1
+    assert report["inconclusive"] is True
+    assert report["pass_rate"] == 1.0     # graded incident passed; outage not counted
+    assert report["all_pass"] is False    # ...but an outage means the run can't be called a pass
+    assert bench.exit_code(report) == 1
+
+
 def test_p95_breach_fails_run():
     fixtures = bench.build_fixtures()
     f = next(x for x in fixtures if x.delivered)

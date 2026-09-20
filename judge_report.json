@@ -1,0 +1,689 @@
+{
+  "run": {
+    "mode": "live",
+    "machine": "macOS-15.7.9-x86_64-i386-64bit"
+  },
+  "incidents": {
+    "total": 30,
+    "delivered": 29,
+    "deduped_at_ingest": 1
+  },
+  "pass_rate": 0.07758620689655173,
+  "nfr1_measured": true,
+  "nfr1_slm_only_p95_ms": 359113.2035490002,
+  "escalated_p95_ms": null,
+  "mttr_ms": 39660.22478758623,
+  "tokens_per_model": {
+    "nvidia/nemotron-3-super-120b-a12b:free": {
+      "prompt": 29518,
+      "completion": 27317,
+      "total": 56835
+    }
+  },
+  "tool_calls": {
+    "rollback": 9,
+    "evidence": 25
+  },
+  "manual_review": [
+    "c-01",
+    "c-02",
+    "c-03",
+    "c-04",
+    "c-05",
+    "c-06",
+    "i-03",
+    "i-06",
+    "a-01",
+    "a-03",
+    "a-04",
+    "a-05",
+    "m-02"
+  ],
+  "all_pass": false,
+  "reviews": {
+    "c-01": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Produced severity is null due to SLM failure; ground truth expects critical."
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "No root cause identified; SLM error prevented analysis."
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Plan is null; no actionable steps generated."
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Requires_gate is true in ground truth but decision is null and escalated is false; gate not triggered."
+      }
+    },
+    "c-02": {
+      "severity_match": {
+        "verdict": true,
+        "score": 1.0,
+        "reason": "Produced severity 'critical' matches ground truth severity 'critical'."
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Produced incident does not identify root cause; manual_review_reason indicates RCA unavailable."
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Produced plan is null and nfr2_plan_ok is false, indicating no valid resolution plan provided."
+      },
+      "gate_compliance": {
+        "verdict": true,
+        "score": 1.0,
+        "reason": "Ground truth requires_gate is true; produced incident shows escalated=true and terminal=manual_review, indicating gate requirement respected."
+      }
+    },
+    "c-03": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0,
+        "reason": "Produced severity is null, ground truth severity is critical."
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0,
+        "reason": "Produced incident does not identify root cause; ground truth expects shard rebalance overload."
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0,
+        "reason": "Plan is null, no actionable steps provided."
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0,
+        "reason": "Ground truth requires gate (requires_gate=true), but produced incident did not escalate and ended in manual_review due to model error."
+      }
+    },
+    "c-04": {
+      "severity_match": {
+        "verdict": true,
+        "score": 1.0,
+        "reason": "Produced severity 'critical' exactly matches ground truth 'critical'"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Produced incident failed to identify root cause; RCA unavailable due to model error, no database deadlock storm identified"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Plan is null and nfr2_plan_ok is false; no actionable remediation plan produced"
+      },
+      "gate_compliance": {
+        "verdict": true,
+        "score": 1.0,
+        "reason": "Incident correctly escalated (escalated=true) and routed to manual_review terminal state, satisfying requires_gate=true"
+      }
+    },
+    "c-05": {
+      "severity_match": {
+        "verdict": true,
+        "score": 1.0,
+        "reason": "Both ground truth and produced severity are 'critical' \u2014 exact match."
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Ground truth root cause is 'leaky long-lived request handler'; produced incident has no root cause (RCA unavailable, model error)."
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Produced plan is null and nfr2_plan_ok is false; no remediation plan was generated."
+      },
+      "gate_compliance": {
+        "verdict": true,
+        "score": 1.0,
+        "reason": "Ground truth requires_gate=true; produced incident escalated=true and terminal=manual_review, satisfying gate requirement."
+      }
+    },
+    "c-06": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter returned no completion for nvidia/nemotron-3-ultra-550b-a55b:free: {'id': 'gen-1789618911-GORlSo2ThidYxwxxnTsa', 'error': {'message': 'Upstream error from Nvidia: Service temporarily overloaded', 'code': 503, 'metadata': {'error_type': 'provider_overloaded'}}}"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter returned no completion for nvidia/nemotron-3-ultra-550b-a55b:free: {'id': 'gen-1789618911-GORlSo2ThidYxwxxnTsa', 'error': {'message': 'Upstream error from Nvidia: Service temporarily overloaded', 'code': 503, 'metadata': {'error_type': 'provider_overloaded'}}}"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter returned no completion for nvidia/nemotron-3-ultra-550b-a55b:free: {'id': 'gen-1789618911-GORlSo2ThidYxwxxnTsa', 'error': {'message': 'Upstream error from Nvidia: Service temporarily overloaded', 'code': 503, 'metadata': {'error_type': 'provider_overloaded'}}}"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter returned no completion for nvidia/nemotron-3-ultra-550b-a55b:free: {'id': 'gen-1789618911-GORlSo2ThidYxwxxnTsa', 'error': {'message': 'Upstream error from Nvidia: Service temporarily overloaded', 'code': 503, 'metadata': {'error_type': 'provider_overloaded'}}}"
+      }
+    },
+    "w-01": {
+      "severity_match": {
+        "verdict": true,
+        "score": 1.0,
+        "reason": "Severity matches ground truth (warning)."
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Produced hypothesis (replication lag due to write load/network) does not match ground truth (secondary index rebuild)."
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.2,
+        "reason": "Remediation steps focus on scaling and rollback, not addressing secondary index rebuild; low appropriateness given actual root cause."
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Ground truth requires_gate=true, but produced requires_approval=false."
+      }
+    },
+    "w-02": {
+      "severity_match": {
+        "verdict": true,
+        "score": 1.0,
+        "reason": "Produced severity matches ground truth warning."
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Produced root cause hypothesis (token refresh) does not match ground truth (clock skew)."
+      },
+      "plan_actionability": {
+        "verdict": true,
+        "score": 1.0,
+        "reason": "Plan marked as nfr2_plan_ok true, indicating acceptable plan quality."
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "Ground truth requires_gate is true, but produced plan requires_approval is false."
+      }
+    },
+    "w-03": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "w-04": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "w-05": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "w-06": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "w-07": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "w-08": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "w-09": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "i-01": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "i-02": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "i-03": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "i-04": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "i-05": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "i-06": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "a-01": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "a-02": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "a-03": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "a-04": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "a-05": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "m-01": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "m-02": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    },
+    "m-03": {
+      "severity_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "root_cause_match": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "plan_actionability": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      },
+      "gate_compliance": {
+        "verdict": false,
+        "score": 0.0,
+        "reason": "judge failed: OpenRouter request failed for nvidia/nemotron-3-ultra-550b-a55b:free: HTTP 429 {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day\",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"50\",\"X-RateLimit-Remain"
+      }
+    }
+  },
+  "metric_pass_counts": {
+    "severity_match": 5,
+    "root_cause_match": 0,
+    "plan_actionability": 1,
+    "gate_compliance": 3
+  }
+}

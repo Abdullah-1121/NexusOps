@@ -61,6 +61,14 @@ Post-mortem on `--record out.json` + `--judge out.json` (29 delivered, 1 deduped
 
 Remaining unknowns (not code): the free-model daily cap (429 `free-models-per-day`, 50 calls/day no-credits) throttled judge replay before reasons could be verified; several of the 17 mechanically-correct severities were still judged wrong, which is a free-tier judge reliability question pending reasons capture on the next funded/un-throttled pass.
 
+## Phase 4h — second live validation + judge-outage guardrail (2026-09-16)
+Reran `--record` + `--judge` on the fixed build. Three results:
+1. **Plan-contract fix verified in the wild:** 16/16 produced plans are now NFR-2-valid with all 7 §5.3 keys (was 0/29) — the RCA_SCHEMA drift is genuinely closed.
+2. **The judge run was mostly an outage, and the report said so:** of 29 judge calls, **22 failed** (21 = `free-models-per-day` daily free-tier cap, 1 empty completion). Their all-false defaults were silently dragging `pass_rate` toward 0 — i.e. a grader outage masqueraded as a bad model. **Guardrail added:** `JUDGE_FAILURE_PREFIX` + `_judge_failed`, report now carries `judge_failures` / `graded` / `inconclusive`, `pass_rate` is computed over **graded incidents only**, and any judge outage forces `all_pass=False`. Test: `test_judge_outage_is_inconclusive_not_a_low_score` (58 tests pass, smoke green).
+3. **Corrected an earlier inference (honest):** with reasons now captured, the 7 incidents that *did* grade show the judge agrees with ground truth on severity (5/7; the 2 misses are genuine model no-output/manual-review cases). The Phase-4g guess that "the judge is harsh/unreliable" was itself under-informed — the real cause was outage defaults. Real model findings that survive: `root_cause_match` 0 on the graded pair (plausible-but-wrong hypotheses, e.g. "replication lag" vs ground "secondary index rebuild"), and `gate_compliance` fails where the produced plan's `requires_approval=false` contradicts the mandatory gate (NG-1 is a system invariant, not a model-chosen field — a judge-criteria/contract ambiguity to settle next).
+
+Blocked on the **daily free-model cap** (unrecoverable by retry — resets daily or lifts with 10 credits): a full, non-inconclusive verdict needs a funded key or a fresh day.
+
 ## Phase 5 — Feynman (2026-09-08)
 **Answer incorrect, lesson + two fixes captured.** Question: live report `all_pass:true` but zero SLM tokens and all `escalated:true`. Developer answered "the model threw a silent error." Corrected: a model error is never silent (D-6 → manual_review → all_pass false), so the silence was *harness instrumentation*, not the model. Led directly to findings 4 & 5 above. Feature closed with the fixed defects and their regression tests; concept gap recorded.
 

@@ -508,10 +508,21 @@ async def _judge_all(judge: Callable, results: list[IncidentResult]) -> list[dic
             reviews.append(await judge_result(judge, r))
         except ModelError as e:
             reviews.append(
-                {m: {"verdict": False, "score": 0.0, "reason": f"judge failed: {e}"}
+                {m: {"verdict": False, "score": 0.0, "reason": f"{JUDGE_FAILURE_PREFIX}{e}"}
                  for m in JUDGE_METRICS}
             )
     return reviews
+
+
+JUDGE_FAILURE_PREFIX = "judge failed: "
+"""A judge call that errored (429/timeout) is NOT a model-quality verdict. Its
+all-false default is marked here so the report can count it, exclude it from
+pass_rate, and flag the run inconclusive — otherwise a grader outage is silently
+reported as a low score (the same misleading class D-6 forbids elsewhere)."""
+
+
+def _judge_failed(review: dict) -> bool:
+    return any(v["reason"].startswith(JUDGE_FAILURE_PREFIX) for v in review.values())
 
 
 def _retry_model(fn: Callable, retries: int = 3, base_sleep: float = 1.0) -> Callable:
@@ -562,13 +573,18 @@ def build_report(results: list[IncidentResult], fixtures: list[Fixture], sink: M
     escalated = [r.t_gate_ms for r in results if r.escalated and r.t_gate_ms is not None]
     resolves = [r.t_resolve_ms for r in results if r.t_resolve_ms is not None]
     manual = [r.incident_id for r in results if r.manual_review_reason]
-    verdicts = [v for r in reviews for v in r.values()]
+    judged = [r for r in reviews if not _judge_failed(r)]
+    judge_failures = len(reviews) - len(judged)
+    # only REAL grades count as verdicts: an errored judge call must not read as
+    # a failed incident, and its absence must be visible, not averaged away.
+    verdicts = [v for r in judged for v in r.values()]
     p95 = _p95(slm_only)
     # NFR-1 must be MEASURED, not vacuously true: an empty SLM-only set means
     # the target was never exercised (e.g. everything escalated) -> fail loud.
     nfr1_measured = bool(slm_only)
     all_pass = (
         bool(verdicts)
+        and judge_failures == 0
         and all(v["verdict"] for v in verdicts)
         and not manual
         and all(r.plan_ok for r in results)
@@ -590,7 +606,7 @@ def build_report(results: list[IncidentResult], fixtures: list[Fixture], sink: M
             "delivered": len(results),
             "deduped_at_ingest": sum(1 for f in fixtures if not f.delivered),
         },
-        "pass_rate": _pass_rate(reviews),
+        "pass_rate": _pass_rate(judged),
         "nfr1_measured": nfr1_measured,
         "nfr1_slm_only_p95_ms": p95,
         "escalated_p95_ms": _p95(escalated),
@@ -599,6 +615,11 @@ def build_report(results: list[IncidentResult], fixtures: list[Fixture], sink: M
         "tool_calls": {"rollback": len(sink.rollback_calls), "evidence": len(sink.evidence_calls)},
         "manual_review": manual,
         "all_pass": all_pass,
+        # a grader outage (429/timeout) is reported, not silently averaged into
+        # the score: pass_rate uses graded incidents only; any outage => inconclusive
+        "judge_failures": judge_failures,
+        "graded": len(judged),
+        "inconclusive": judge_failures > 0,
         # the per-incident verdicts+reasons the docstring promises the report
         # ships: severity/root_cause/plan/gate for every incident, human-readable
         "reviews": {r.incident_id: review for r, review in zip(results, reviews)},
