@@ -118,11 +118,27 @@ def make_rca_node(rca: ModelFn) -> Callable:
                     {
                         "role": "user",
                         "content": (
-                            "Produce an RFC3339-aware remediation plan (strict JSON per schema) "
-                            "for this incident + evidence. Reflect the incident's classified "
-                            f"severity={state.get('severity')!r} affected_service={state.get('affected_service')!r} "
-                            "in the plan fields of the same name. Incident: "
-                            f"{json.dumps(state['alert'])} Evidence: {json.dumps(state['evidence'])}"
+                            "Produce a remediation plan (strict JSON per schema) for this "
+                            "incident, reasoning FROM the evidence, not from the alert text "
+                            "alone. Your root_cause_hypothesis must be CONSISTENT with the "
+                            "evidence: every evidence item must support or refute it — if an "
+                            "item contradicts your hypothesis, revise the hypothesis until "
+                            "nothing contradicts it. Each remediation step (action/target) "
+                            "must be justified by at least one evidence item; name which one. "
+                            "requires_approval must be true — every plan is subject to a "
+                            "mandatory human gate (NG-1). Reflect the classified "
+                            f"severity={state.get('severity')!r} "
+                            f"affected_service={state.get('affected_service')!r} "
+                            "in the plan fields of the same name. "
+                            f"Incident: {json.dumps(state['alert'])} "
+                            "Evidence: "
+                            + (
+                                "\n".join(
+                                    f"{i + 1}. {json.dumps(ev)}"
+                                    for i, ev in enumerate(state.get("evidence") or [])
+                                )
+                                or "(no evidence gathered)"
+                            )
                         ),
                     }
                 ],
@@ -131,6 +147,12 @@ def make_rca_node(rca: ModelFn) -> Callable:
             )
         except Exception as exc:  # D-6
             return _model_failure(f"{'FF' if state.get('escalated') else 'SLM'} RCA unavailable: {exc!r}")
+        # NG-1 gate invariant: the human approval gate is a SYSTEM rule, not a
+        # model choice. Whatever the model wrote, a plan entering the system is
+        # always subject to the gate — override here, at the single choke point,
+        # so state, checkpoints, the judge, and _plan_ok can never see a
+        # no-approval plan (2026-09-21: 5/8 gate misses were this field).
+        plan["requires_approval"] = True
         return {"plan": plan}
 
     return rca_node

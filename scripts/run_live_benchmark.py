@@ -26,13 +26,13 @@ import os
 import redis
 from fastapi.testclient import TestClient
 
-from app.benchmark import _run, build_fixtures, exit_code, judge_checkpoint
+from app.benchmark import _run, build_fixtures, exit_code, judge_checkpoint, select_stratified
 from app.ingest import DEDUPE_KEY, QUEUE_KEY, app as ingest_app
 
 REDIS_URL = os.environ.get("NEXUSOPS_REDIS_URL", "redis://localhost:6379/0")
 
 
-def seed() -> None:
+def seed(limit: int | None = None) -> None:
     client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     client.delete(QUEUE_KEY, DEDUPE_KEY)
 
@@ -52,26 +52,37 @@ def seed() -> None:
         )
         client.lrem(QUEUE_KEY, 0, dup_raw)  # pre-epoch entry -> out of this epoch
 
-        for f in build_fixtures():
-            if f.delivered:
-                resp = api.post("/webhook/incident", json=f.alert)
-                assert resp.status_code == 202, resp.text
-    assert client.llen(QUEUE_KEY) == 29, client.llen(QUEUE_KEY)
+        # --limit N: seed a deterministic stratified slice (every category), so
+        # quick runs fit the free-tier daily budget without skewing the sample.
+        selected = select_stratified(build_fixtures(), limit) if limit else [
+            f for f in build_fixtures() if f.delivered
+        ]
+        for f in selected:
+            resp = api.post("/webhook/incident", json=f.alert)
+            assert resp.status_code == 202, resp.text
+    assert client.llen(QUEUE_KEY) == len(selected), client.llen(QUEUE_KEY)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="nexusops-live-benchmark")
     parser.add_argument("--record", metavar="PATH", help="phase A: pipeline only, save outputs, no judging")
     parser.add_argument("--judge", metavar="PATH", help="phase B: grade a recorded checkpoint, no Redis")
+    parser.add_argument("--limit", type=int, metavar="N",
+                        help="quick run: only N incidents, stratified across categories "
+                             "(e.g. --limit 10 fits a free-tier day; same N for judge)")
     args = parser.parse_args(argv)
 
     if args.judge and args.record:
         parser.error("--record and --judge are separate passes; pick one.")
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be >= 1")
     if args.judge:
+        if args.limit is not None:
+            parser.error("--limit applies to --record; the judge grades whatever the checkpoint contains")
         report = asyncio.run(judge_checkpoint(args.judge))
     else:
-        seed()  # --record re-seeds exactly like a full live run
-        report = asyncio.run(_run("live", record=args.record))
+        seed(args.limit)  # --record re-seeds exactly like a full live run
+        report = asyncio.run(_run("live", record=args.record, until=args.limit))
 
     print(json.dumps(report, indent=2))
     return exit_code(report) if not args.record else 0

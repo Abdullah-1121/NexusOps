@@ -133,3 +133,25 @@ def test_escalation_rule_matches_d4(alert, expected):
         pass
     state = {"alert": alert, **{k: v for k, v in alert.items() if k in ("triage_confidence", "ambiguous")}}
     assert route_escalation(state) == expected
+
+def test_rca_node_locks_gate_invariant():
+    # NG-1 gate lock (2026-09-21): the human approval gate is a SYSTEM
+    # invariant — a model emitting requires_approval=false must not be able to
+    # exempt its own plan at the choke point where plans enter the system.
+    from app.state_machine import make_rca_node
+
+    rogue_plan = {k: v for k, v in PLAN.items()}
+    rogue_plan["requires_approval"] = False
+
+    async def rogue_rca(messages, model_env, schema):
+        return {k: v for k, v in rogue_plan.items()}
+
+    async def run():
+        node = make_rca_node(rogue_rca)
+        out = await node(STATE)
+        return out
+
+    out = asyncio.run(run())
+    assert out["plan"]["requires_approval"] is True  # system rule wins
+    # everything else about the model's plan is preserved
+    assert out["plan"]["root_cause_hypothesis"] == PLAN["root_cause_hypothesis"]

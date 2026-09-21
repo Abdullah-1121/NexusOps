@@ -225,6 +225,79 @@ def test_judge_outage_is_inconclusive_not_a_low_score():
     assert bench.exit_code(report) == 1
 
 
+def test_select_stratified_covers_every_category():
+    # quick runs (--limit N) must not be a "first N" skew: the fixture set is
+    # deliberately categorized (critical/warning/info/ambiguous/malformed), so a
+    # cheap slice must sample every category and stay deterministic (NFR-5).
+    fixtures = bench.build_fixtures()
+    sel = bench.select_stratified(fixtures, 10)
+    assert len(sel) == 10
+    assert all(f.delivered for f in sel)
+    from collections import Counter
+    assert Counter(bench._category(f) for f in sel) == {
+        "c-": 2, "w-": 2, "i-": 2, "a-": 2, "m-": 2,
+    }
+    # deterministic: same input + n -> same selection, every call
+    again = bench.select_stratified(fixtures, 10)
+    assert [f.alert["incident_id"] for f in sel] == [f.alert["incident_id"] for f in again]
+    # n=3 -> three distinct categories (not three criticals)
+    sel3 = bench.select_stratified(fixtures, 3)
+    assert len({bench._category(f) for f in sel3}) == 3
+    # n beyond the delivered pool -> all delivered, never the dup
+    assert len(bench.select_stratified(fixtures, 100)) == 29
+    assert "dup-01" not in [f.alert["incident_id"] for f in bench.select_stratified(fixtures, 100)]
+    # n=0 -> empty (loop guard, not an infinite round-robin)
+    assert bench.select_stratified(fixtures, 0) == []
+
+
+def test_plan_ok_rejects_no_approval_plan():
+    # NG-1 gate invariant (2026-09-21): the human gate is a SYSTEM rule, so a
+    # plan claiming "no approval needed" is NFR-2-invalid regardless of output.
+    g = bench.build_fixtures()[0].ground
+    p = _plan(g)
+    assert bench._plan_ok(p) is True
+    p["requires_approval"] = False
+    assert bench._plan_ok(p) is False
+    p["requires_approval"] = None
+    assert bench._plan_ok(p) is False
+
+
+def test_report_separates_outages_from_wrong_answers():
+    # 2026-09-21: a manual_review is a model/tool OUTAGE (D-6) — the system did
+    # the right thing by refusing to guess. It must not be counted as a wrong
+    # answer in the skill assessment (metric_pass_counts_answered), and must be
+    # explicit (outages/outage_count/answered) rather than silently averaged in.
+    fixtures = bench.build_fixtures()
+    f = next(x for x in fixtures if x.delivered)
+    good_res = bench.IncidentResult(
+        incident_id=f.alert["incident_id"], fixture=f, severity=f.ground["severity"],
+        plan=_plan(f.ground), terminal="resolved", t_gate_ms=100.0, t_resolve_ms=120.0,
+        escalated=False, manual_review_reason=None, decision={"decision": "approve"}, plan_ok=True,
+    )
+    outage_res = bench.IncidentResult(
+        incident_id="outage-1", fixture=f, severity=None, plan=None, terminal=None,
+        t_gate_ms=None, t_resolve_ms=None, escalated=False,
+        manual_review_reason="SLM unavailable: provider down", decision=None, plan_ok=False,
+    )
+    good_rev = asyncio.run(_fake_judge(good_res))  # all four verdicts True
+    outage_rev = {m: {"verdict": False, "score": 0.0, "reason": "no output — model outage"}
+                  for m in bench.JUDGE_METRICS}
+    # the outage review also carries one credited pass to prove the split works
+    outage_rev["severity_match"] = {"verdict": True, "score": 1.0, "reason": "judge credited severity"}
+    report = bench.build_report([good_res, outage_res], fixtures, bench.MetricSink(),
+                                [good_rev, outage_rev], mode="test")
+    assert report["outages"] == ["outage-1"]
+    assert report["outage_count"] == 1
+    assert report["answered"] == 1
+    # all-graded counts include the outage's credited pass…
+    assert report["metric_pass_counts"]["severity_match"] == 2
+    # …but the answered-only skill counts exclude it
+    assert report["metric_pass_counts_answered"]["severity_match"] == 1
+    for m in ("root_cause_match", "plan_actionability", "gate_compliance"):
+        assert report["metric_pass_counts_answered"][m] == 1
+    assert report["manual_review"] == ["outage-1"]
+
+
 def test_p95_breach_fails_run():
     fixtures = bench.build_fixtures()
     f = next(x for x in fixtures if x.delivered)

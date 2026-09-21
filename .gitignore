@@ -11,5 +11,10 @@ __pycache__/
 
 # Benchmark scratch (regenerable)
 out.json
+out10*.json
 live_bench_report.json
 live_bench_err.log
+live1*_report.json
+live1*_err.log
+judge*_report.json
+judge*_err.log

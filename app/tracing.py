@@ -41,13 +41,23 @@ _configured = False
 
 
 def _default_exporter() -> SpanExporter:
-    """OTLP HTTP exporter when OTEL_EXPORTER_OTLP_ENDPOINT is set (standard env
-    contract), else console. The endpoint env is the whole industry-standard knob;
-    an empty provider config stays visible, not silent."""
-    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-    if endpoint:
+    """OTLP HTTP exporter when an OTEL endpoint var is set (standard env
+    contract), else console. Two vars, two meanings — both honored here:
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT  full URL incl. /v1/traces (winning)
+      OTEL_EXPORTER_OTLP_ENDPOINT         base URL, SDK appends /v1/traces
+    The path append happens HERE, explicitly: passing the raw base URL as the
+    exporter's endpoint= kwarg bypasses the SDK's internal append (verified:
+    the SDK only appends when the endpoint comes from its env fallback), so a
+    bare base URL would 404 against a real collector. An empty provider config
+    stays visible, not silent."""
+    traces_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+    base = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if traces_endpoint or base:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
+        endpoint = traces_endpoint or base
+        if not traces_endpoint and not endpoint.rstrip("/").endswith("/v1/traces"):
+            endpoint = endpoint.rstrip("/") + "/v1/traces"
         return OTLPSpanExporter(endpoint=endpoint)
     # Console spans go to stderr, never stdout: the benchmark CLI owns stdout for
     # its JSON report, and interleaved span dumps corrupt it (a real bug caught

@@ -22,6 +22,35 @@ from typing import Callable
 import httpx
 from opentelemetry import trace
 
+
+def _load_env_file(path: Path | None = None) -> None:
+    """Load the gitignored .env into os.environ with no third-party dependency.
+
+    Runs BEFORE app.tracing is imported: the tracer provider is one-shot (whoever
+    calls set_tracer_provider first owns the process), so an OTEL_* endpoint var
+    set in .env must be visible to the exporter wiring at import time — not
+    after the console fallback has already been installed.
+
+    Existing variables always win (setdefault), so real env and injected test
+    fakes are never overridden. Missing file is fine — live runs then require
+    the variables to be exported instead.
+    """
+    path = path or Path(__file__).resolve().parent.parent / ".env"
+    try:
+        lines = path.read_text().splitlines()
+    except FileNotFoundError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_env_file()
+
+
 from app.tracing import (
     GEN_AI_REQUEST_MODEL,
     GEN_AI_RESPONSE_ID,
@@ -48,29 +77,6 @@ class ModelError(RuntimeError):
         super().__init__(message)
         self.status_code = status_code
         self.retryable = retryable
-
-
-def _load_env_file(path: Path | None = None) -> None:
-    """Load the gitignored .env into os.environ with no third-party dependency.
-
-    Existing variables always win (setdefault), so real env and injected test
-    fakes are never overridden. Missing file is fine — live runs then require
-    the variables to be exported instead.
-    """
-    path = path or Path(__file__).resolve().parent.parent / ".env"
-    try:
-        lines = path.read_text().splitlines()
-    except FileNotFoundError:
-        return
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
-_load_env_file()
 
 
 def _env(name: str, default: str | None) -> str:

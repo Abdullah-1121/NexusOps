@@ -204,6 +204,10 @@ resumes the correct parked state-machine thread.
 # Two-phase replay (rate-limit escape hatch): record the pipeline, judge later
 .venv/bin/python -m scripts.run_live_benchmark --record out.json   # phase A: pipeline only
 .venv/bin/python -m scripts.run_live_benchmark --judge out.json    # phase B: grade the recording
+
+# Quick run — stratified slice, fits a free-tier day (~25 calls instead of ~90):
+.venv/bin/python -m scripts.run_live_benchmark --record out10.json --limit 10
+.venv/bin/python -m scripts.run_live_benchmark --judge out10.json # grades exactly the 10 recorded
 ```
 
 The live driver seeds 30 synthetic incidents *through the real ingestion
@@ -213,11 +217,28 @@ cost, per-metric pass counts, tool inventory) and a non-zero exit code on any
 failure: verdict miss, NFR-2 plan violation, NFR-1 budget breach, or a
 starvation-loud `manual_review`.
 
+### 5. Tracing (Jaeger + OpenTelemetry)
+
+Every LLM call opens a `gen_ai.*` OpenTelemetry span (SLM classify, frontier
+RCA/plan, and the LLM judge). No collector → spans print to stderr (zero-infra
+fallback). With the collector up, they flow over OTLP/HTTP and you get the
+waterfall in a browser:
+
+```bash
+scripts/start-jaeger.sh          # idempotent; starts the all-in-one container
+open http://localhost:16686      # service: nexusops -> incident -> LLM-call spans
+```
+
+`.env` already sets `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`, which
+every run honors (the provider is wired from `.env` before the tracer SDK boots).
+Override per-run with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` for a full URL, or
+unset the var to fall back to stderr.
+
 ### Tests
 
 ```bash
 .venv/bin/python -m pytest tests/
-# → 51 passed
+# → 59 passed
 ```
 
 ---
