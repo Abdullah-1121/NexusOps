@@ -62,9 +62,6 @@ from app.tracing import (
     llm_system,
 )
 
-OpenRouterURL = "https://openrouter.ai/api/v1/chat/completions"
-
-
 class ModelError(RuntimeError):
     """Loud, typed failure for any model-call problem (D-6 routes on this).
 
@@ -118,9 +115,9 @@ async def complete_json(
 ) -> dict:
     """POST a chat completion and return the model's reply as a dict.
 
-    `json_schema` (OpenRouter response_format json_schema, strict) keeps the
+    `json_schema` (strict response_format json_schema) keeps the
     model honest with structured output; _enforce_json is the fail-loud guard.
-    `usage_sink(model_env, usage)` receives the OpenRouter usage block if given
+    `usage_sink(model_env, usage)` receives the provider's usage block if given
     (the benchmark's token-cost metric uses it); callers that don't care omit it.
     """
     api_key = _env("NEXUSOPS_LLM_API_KEY", os.environ.get("NEXUSOPS_OPENROUTER_API_KEY"))
@@ -151,6 +148,20 @@ async def complete_json(
             raise
 
 
+def _quota_exhausted(text: str) -> bool:
+    """Detect a TERMINAL daily-cap response — retrying it is pointless because
+    the quota resets on a provider schedule (midnight Pacific for Gemini), not
+    within our retry window. Treating quota-exhaustion as `retryable=True` was
+    the bug behind 2026-09-22: a congested judge pass retried the 429 right up
+    to 3x per incident and silently burned the whole 20-call free day."""
+    t = text.lower()
+    return (
+        "exceeded your current quota" in t  # Gemini exact wording
+        or "limit reached" in t  # OpenRouter free-tier daily cap wording
+        or ("exceeded" in t and "quota" in t)
+    )
+
+
 async def _chat(
     api_key: str, url: str, payload: dict, model: str, timeout_s: float,
     usage_sink: Callable[[str, dict], None] | None,
@@ -167,19 +178,20 @@ async def _chat(
             )
         except httpx.HTTPError as e:
             # transport error or timeout — transient, safe to retry
-            raise ModelError(f"OpenRouter request failed for {model}: {e}", retryable=True) from e
+            raise ModelError(f"LLM request failed for {model}: {e}", retryable=True) from e
     if response.status_code >= 400:
         raise ModelError(
-            f"OpenRouter request failed for {model}: HTTP {response.status_code} {str(response.text)[:200]}",
+            f"LLM request failed for {model}: HTTP {response.status_code} {str(response.text)[:200]}",
             status_code=response.status_code,
-            retryable=(response.status_code == 429 or response.status_code >= 500),
+            retryable=(response.status_code == 429 or response.status_code >= 500)
+            and not _quota_exhausted(str(response.text)),
         )
     body = response.json()
     if "error" in body or "choices" not in body:
-        # OpenRouter can answer HTTP 200 with an error body (free-tier models
+        # Some providers answer HTTP 200 with an error body (free-tier models
         # do this). It is still a model failure: typed ModelError, never a raw
         # KeyError — D-6 nodes and the benchmark route on ModelError.
-        raise ModelError(f"OpenRouter returned no completion for {model}: {body}")
+        raise ModelError(f"LLM returned no completion for {model}: {body}")
     if usage_sink is not None:
         usage_sink(model, body.get("usage", {}))
     _span_attrs(body, model)

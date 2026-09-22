@@ -462,3 +462,22 @@ def test_checkpoint_round_trips_without_losing_fields(tmp_path):
     assert got_s.model_calls == sink.model_calls
     assert got_s.rollback_calls == ["sha1"]
     assert got_s.evidence_calls == ["c-01"]
+
+def test_golden_replay_machinery_pass():
+    # D-8 (2026-09-22): the golden-replay demo proves OUR machinery end to end
+    # with a perfect model (smoke fakes, zero tokens, zero network). Every
+    # incident must: park at the gate, get the fixture's exact decision,
+    # roll back exactly when approved (never on reject), emit an NFR-2-valid
+    # plan, and classify severity correctly. Any miss is a pipeline bug.
+    report = asyncio.run(bench._run("golden"))
+    g = report["golden"]
+    assert g is not None
+    n = g["incidents_audited"]
+    assert n >= 29  # all delivered fixtures
+    assert g["machinery_pass"] is True
+    c = g["counts"]
+    for check in g["checks"]:
+        assert c[check] == n, f"{check}: {c[check]}/{n}"
+    # truly offline: the smoke fakes never touch a model
+    assert all(v == 0 for v in report["tokens_per_model"].values()) or report["tokens_per_model"] == {}
+    assert report["all_pass"] is True

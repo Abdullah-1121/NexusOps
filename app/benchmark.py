@@ -31,6 +31,7 @@ from typing import Any, Callable
 from langgraph.types import Command
 
 from app.models import ModelError, complete_json
+from app.state_machine import _rollback_target  # noqa: E402 — private helper reused for D-8 audit
 from app.state_machine import build_graph
 from app.tracing import get_tracer
 
@@ -341,7 +342,7 @@ async def judge_checkpoint(path: str) -> dict:
     async def judge(messages, model_env, schema):
         return await complete_json(messages, model_env=model_env, timeout_s=90.0, json_schema=schema)
 
-    judge = _retry_model(judge)
+    judge = _retry_model(judge, retries=2)  # 1 in-process blip retry; the judge retry loop owns big sleeps
     reviews = await _judge_all(judge, results)
     return build_report(results, _fixtures, sink, reviews, mode="live")
 
@@ -705,7 +706,66 @@ def _pass_rate(reviews: list[dict]) -> float:
 
 
 def exit_code(report: dict) -> int:
+    if report.get("golden") and not report["golden"]["machinery_pass"]:
+        return 1
     return 0 if report["all_pass"] else 1
+
+
+def golden_audit(results: list[IncidentResult], sink: MetricSink) -> dict:
+    """D-8: deterministic per-incident MACHINERY audit (not a model-quality
+    check). Every question is about OUR state machine, answered against the
+    recorded run: did it park at the gate for a human, apply exactly the
+    fixture's expected decision, execute the rollback exactly when approved
+    and never when rejected, emit an NFR-2-valid plan, and classify severity
+    correctly (the smoke fakes are perfect, so any miss here is OUR bug)."""
+    calls = set(sink.rollback_calls)
+    rows = {}
+    for r in results:
+        g = r.fixture.ground if r.fixture else {}
+        plan = r.plan or {}
+        target = _rollback_target(plan)
+        expected = g.get("expected_decision", "reject")
+        executed = target is not None and target in calls
+        rows[r.incident_id] = {
+            "parked_at_gate": r.t_gate_ms is not None and not r.manual_review_reason,
+            "decision_matches": (r.decision or {}).get("decision") == expected,
+            # approve -> exactly one rollback to the plan's target;
+            # reject  -> nothing executed (plan has no rollback step)
+            "rollback_correct": executed == (expected == "approve"),
+            "plan_ok": r.plan_ok,
+            "severity_correct": r.severity == g.get("severity"),
+        }
+    checks = ("parked_at_gate", "decision_matches", "rollback_correct", "plan_ok", "severity_correct")
+    counts = {k: sum(1 for x in rows.values() if x[k]) for k in checks}
+    return {
+        "rows": rows,
+        "checks": list(checks),
+        "counts": counts,
+        "incidents_audited": len(rows),
+        "rollback_tool_calls": len(sink.rollback_calls),
+        "evidence_calls": len(sink.evidence_calls),
+        "machinery_pass": bool(rows) and all(all(x.values()) for x in rows.values()),
+    }
+
+
+def print_golden_card(report: dict) -> None:
+    """Human-readable evidence card for the golden-replay demo (D-8)."""
+    g = report["golden"]
+    w = max(len(iid) for iid in g["rows"])
+    print("\nNexusOps — GOLDEN REPLAY (perfect-model machinery proof, zero tokens)")
+    print(f"{'incident_id'.ljust(w)}  gate  dec   roll  plan  sev")
+    for iid, x in g["rows"].items():
+        def m(v):
+            return "ok" if v else "!!"
+        print(f"{iid.ljust(w)}  {m(x['parked_at_gate']).ljust(4)} {m(x['decision_matches']).ljust(4)} "
+              f"{m(x['rollback_correct']).ljust(4)} {m(x['plan_ok']).ljust(4)} {m(x['severity_correct'])}")
+    c = g["counts"]
+    n = g["incidents_audited"]
+    print(f"\nmachinery: {'PASS' if g['machinery_pass'] else 'FAIL'} "
+          f"— gate {c['parked_at_gate']}/{n}, decision {c['decision_matches']}/{n}, "
+          f"rollback {c['rollback_correct']}/{n}, plan {c['plan_ok']}/{n}, "
+          f"severity {c['severity_correct']}/{n}")
+    print(f"rollback tool calls: {g['rollback_tool_calls']} | evidence calls: {g['evidence_calls']} | model tokens: 0\n")
 
 
 # --- CLI ---------------------------------------------------------------------
@@ -719,7 +779,7 @@ async def _run(mode: str, record: str | None = None, until: int | None = None) -
     fixtures = build_fixtures()
     sink = MetricSink()
 
-    if mode == "smoke":
+    if mode in ("smoke", "golden"):
         classify, rca, gather = smoke_classify, smoke_rca, smoke_gather
         judge = smoke_judge
         pop_alerts = _smoke_pop(fixtures)
@@ -750,8 +810,8 @@ async def _run(mode: str, record: str | None = None, until: int | None = None) -
         async def judge(messages, model_env, schema):
             return await complete_json(messages, model_env=model_env, timeout_s=90.0, json_schema=schema)
 
-        judge = _retry_model(judge)
-        model = _retry_model(_instrumented_complete(sink))
+        judge = _retry_model(judge, retries=2)  # 1 blip retry; probe-guarded loop owns 503-window sleeps
+        model = _retry_model(_instrumented_complete(sink), retries=2)
 
         def make_graph():
             return build_graph(classify=model, rca=model, gather=_gather, rollback_tool=sink.rollback)
@@ -763,10 +823,12 @@ async def _run(mode: str, record: str | None = None, until: int | None = None) -
         make_graph,
         lambda g: g["expected_decision"] if g else "reject",
         until,
-        strict=(mode != "smoke"),
+        strict=(mode not in ("smoke", "golden")),
         progress=(lambda done, total: print(f"[live] {done}/{total} incidents done", file=sys.stderr, flush=True))
-        if mode != "smoke" else None,
+        if mode not in ("smoke", "golden") else None,
     )
+    if mode == "golden":
+        return await build_golden_report(results, fixtures, sink, judge)
     if mode != "smoke":
         deduped = await redis.sismember("nexusops:incidents:seen", "dup-01")
         if not deduped:
@@ -782,6 +844,17 @@ async def _run(mode: str, record: str | None = None, until: int | None = None) -
         }
     reviews = await _judge_all(judge, results)
     return build_report(results, fixtures, sink, reviews, mode=mode)
+
+
+async def build_golden_report(results: list[IncidentResult], fixtures: list[Fixture],
+                              sink: MetricSink, judge: Callable) -> dict:
+    """D-8 golden replay: judge with the deterministic smoke judge (perfect
+    model), build the standard report, then attach the per-incident machinery
+    audit. Zero tokens — no model calls happen anywhere in the run."""
+    reviews = await _judge_all(judge, results)
+    report = build_report(results, fixtures, sink, reviews, mode="golden")
+    report["golden"] = golden_audit(results, sink)
+    return report
 
 
 def _smoke_pop(fixtures: list[Fixture]):
@@ -804,18 +877,28 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(prog="nexusops-benchmark")
     parser.add_argument("--smoke", action="store_true", help="deterministic fakes, zero tokens, CI-safe")
+    parser.add_argument("--golden", action="store_true",
+                        help="D-8 golden replay: perfect-model run + per-incident machinery audit card")
     parser.add_argument("--record", metavar="PATH",
                         help="phase A: run the live pipeline, save outputs to PATH, stop before judging")
     parser.add_argument("--judge", metavar="PATH",
                         help="phase B: grade a recorded phase-A checkpoint (no Redis, replayable)")
     args = parser.parse_args(argv)
     if args.judge:
-        if args.record or args.smoke:
+        if args.record or args.smoke or args.golden:
             parser.error("--judge is a separate pass; use it alone.")
         report = asyncio.run(judge_checkpoint(args.judge))
     else:
-        mode = "smoke" if args.smoke else "live"
+        if args.smoke and args.golden:
+            parser.error("--smoke and --golden are mutually exclusive.")
+        mode = "golden" if args.golden else ("smoke" if args.smoke else "live")
         report = asyncio.run(_run(mode, record=args.record))
+    if args.golden:
+        print_golden_card(report)
+        out = "golden_report.json"
+        with open(out, "w") as f:
+            json.dump(report, f, indent=2)
+        print(f"[golden] evidence card saved to {out}")
     print(json.dumps(report, indent=2))
     return exit_code(report) if not args.record else 0
 
