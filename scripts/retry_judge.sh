@@ -22,11 +22,27 @@ SLEEP_MIN="${SLEEP_MIN:-15}"
 # Probe the FRONTIER model (the one the judge calls) with a 1-token answer.
 # A quota-exhausted 429 now reads as non-retryable -> probe fails -> we sleep
 # until the daily reset instead of burning the pass on a dead day.
+# Robustness (2026-09-23): Gemini's OpenAI-compat shim returns the healthy body
+# as an OBJECT {choices:...} but a 503 as an ARRAY [{error:...}], and a healthy
+# answer can carry empty `content` (thinking model, finish_reason=length). The
+# old check required truthy content -> healthy windows read as dead. This probe
+# accepts any body with a `choices` array and only fails on an explicit error.
 probe() {
   curl -s --max-time 30 "$NEXUSOPS_LLM_API_URL/chat/completions" \
     -H "Authorization: Bearer $NEXUSOPS_LLM_API_KEY" -H "Content-Type: application/json" \
     -d "{\"model\":\"$NEXUSOPS_FRONTIER_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":3}" \
-    | python3 -c "import json,sys;d=json.load(sys.stdin);sys.exit(0 if 'choices' in d and d['choices'][0].get('message',{}).get('content') else 1)"
+    | python3 -c "
+import json,sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+items = d if isinstance(d, list) else [d]
+if any(isinstance(x, dict) and x.get('error') for x in items):
+    sys.exit(1)
+choices = d.get('choices') if isinstance(d, dict) else items[0].get('choices') if items else None
+sys.exit(0 if choices else 1)
+"
 }
 
 graded() {

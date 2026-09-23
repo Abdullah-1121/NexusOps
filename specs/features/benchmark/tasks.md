@@ -99,6 +99,12 @@ Provider switch per D-9 (config-only): SLM `gemini-3.5-flash-lite` / frontier `g
 - **Clean full-run verdict still blocked:** frontier quota (both flash models) exhausted today by the earlier retry burn; resets midnight Pacific. `outG1.json` + `judgeG1_report.json` saved; `scripts/retry_judge.sh` will finish the 8-incident verdict on the next quota window with ~11 frontier calls (see D-9). DoD for closing: `bash scripts/retry_judge.sh outG1.json` → `judge_failures: 0`, `inconclusive: false`, record final Phase 4m table.
 - 67 tests pass (63 + 4 `_quota_exhausted` guardrails), smoke + golden green.
 
+## Phase 4m follow-up — probe-robustness fix (2026-09-23, quota-window cleanup run)
+Resumed the 4m DoD (`bash scripts/retry_judge.sh outG1.json`) on the reset quota. The first probe failed — and the failure exposed a **probe blind spot, not a dead window** (verified live):
+1. **Healthy window read as dead:** Gemini's OpenAI-compat shim returns `{error: null, choices: [...]}` with **empty `content`** on `finish_reason=length` (thinking-model token cap). The old probe required truthy `content` → a healthy response failed the probe.
+2. **Error body arrives as an ARRAY** (`[{error: {...503...}}]`), object-form only for quota 429s — the old single-shape parse handled neither cleanly (list → `AttributeError` traceback).
+Fix (both `scripts/retry_judge.sh` and `scripts/retry_record.sh`): probe accepts any body with a non-empty `choices` array (empty content OK), fails only on an explicit truthy `error` (value-checked, since healthy bodies carry `error: null`), handles object-or-array shim shapes, non-JSON → fail. Verified offline against all 5 captured shapes (healthy/empty-content PASS, array-503 FAIL, non-JSON FAIL, object-429 FAIL, healthy/content PASS). Window at 00:09 PT was still flaky (503s interleaved with healthy probes) — the probe-guard now makes an honest verdict on that flakiness instead of misreading it. DoD continues: replay to `graded ≥ 8`.
+
 ## Phase 5 — Feynman (2026-09-08)
 **Answer incorrect, lesson + two fixes captured.** Question: live report `all_pass:true` but zero SLM tokens and all `escalated:true`. Developer answered "the model threw a silent error." Corrected: a model error is never silent (D-6 → manual_review → all_pass false), so the silence was *harness instrumentation*, not the model. Led directly to findings 4 & 5 above. Feature closed with the fixed defects and their regression tests; concept gap recorded.
 

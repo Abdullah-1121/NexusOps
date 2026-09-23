@@ -1,0 +1,55 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - heading "NexusOps — demonstration film" [level=1] [ref=e3]
+    - generic [ref=e4]: a deterministic replay of a recorded run · live human gate · real scoped rollback
+  - main [ref=e5]:
+    - generic [ref=e6]:
+      - heading "Recorded incidents" [level=2] [ref=e7]
+      - generic [ref=e8]:
+        - generic [ref=e9] [cursor=pointer]:
+          - generic [ref=e10]: a-01
+          - generic [ref=e11]: db
+          - generic [ref=e12]: manual_review
+        - generic [ref=e13] [cursor=pointer]:
+          - generic [ref=e14]: a-02
+          - generic [ref=e15]: auth
+          - generic [ref=e16]: resolved
+        - generic [ref=e17] [cursor=pointer]:
+          - generic [ref=e18]: c-01
+          - generic [ref=e19]: db
+          - generic [ref=e20]: manual_review
+        - generic [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: c-02
+          - generic [ref=e23]: auth
+          - generic [ref=e24]: rollback
+          - generic [ref=e25]: resolved
+        - generic [ref=e26] [cursor=pointer]:
+          - generic [ref=e27]: i-01
+          - generic [ref=e28]: db
+          - generic [ref=e29]: resolved
+        - generic [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: i-02
+          - generic [ref=e32]: search
+          - generic [ref=e33]: resolved
+        - generic [ref=e34] [cursor=pointer]:
+          - generic [ref=e35]: m-01
+          - generic [ref=e36]: dangling
+          - generic [ref=e37]: resolved
+        - generic [ref=e38] [cursor=pointer]:
+          - generic [ref=e39]: m-02
+          - generic [ref=e40]: orphan
+          - generic [ref=e41]: rejected
+        - generic [ref=e42] [cursor=pointer]:
+          - generic [ref=e43]: w-01
+          - generic [ref=e44]: db
+          - generic [ref=e45]: resolved
+        - generic [ref=e46] [cursor=pointer]:
+          - generic [ref=e47]: w-02
+          - generic [ref=e48]: auth
+          - generic [ref=e49]: resolved
+    - generic [ref=e51]:
+      - button "⏮" [disabled] [ref=e52]
+      - button "◀" [disabled] [ref=e53]
+      - button "▶ Play" [ref=e54] [cursor=pointer]
+      - button "▶" [disabled] [ref=e55]
+      - button "⏭" [disabled] [ref=e56]

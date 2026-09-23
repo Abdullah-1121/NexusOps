@@ -75,6 +75,61 @@ If the SLM or frontier model errors or times out during the evidence/reasoning s
   2. In-process retries capped at 2 (`_retry_model(..., retries=2)`) everywhere — one blip absorbed in-process, everything else owned by the probe-guarded *loop* level.
   3. `scripts/retry_judge.sh` — probe-guarded judge replay: 1-call frontier probe (response_format-free, `max_tokens:3`), only when it answers does a full `--judge` pass run; sleeps and retries otherwise. Never re-runs the pipeline — `judge_checkpoint` replays the saved record (`outG1.json`), so a clean pass costs ~11 frontier calls (10 judge + 1 probe ≈ 55% of the 20/day).
 
+### D-10 Demo film — replay player over recorded checkpoints + real Git rollback (2026-09-23)
+- **Problem:** the thesis needs a *showable* demo — someone watches NexusOps handle an incident, approves a rollback, and sees it really happen. But the recording (`outG1.json`) is a **terminal-state snapshot**, not a film reel: it holds final severity/plan/decision/timings per incident, not per-step stage events (the EventBus only carries decisions today, not transitions).
+- **Playback source — Pattern B (checkpoint-derived player), rejected Pattern A (live re-run):**
+  | Axis | A: re-run the graph live during the demo | B: player over the recorded checkpoint (chosen) |
+  |---|---|---|
+  | Latency | seconds-to-minutes live | instant (reads saved frames) |
+  | Cost | real model quota per demo, or fake outputs with fakes | zero — offline, deterministic |
+  | Failure modes | live system misbehaves mid-demo; non-deterministic | nothing live to break; only risk is a *flat* film (pacing is ours) |
+  | Complexity | re-run graph + inject saved decisions | one player over `outG1.json`; stage order is graph-deterministic, recorded fields fill each beat |
+  The stage sequence is fixed by the state-machine graph, so the film *derives* beats (alert → severity → evidence → plan → gate → decision → rollback → terminal) from the checkpoint without a new recorder in the benchmark pipeline.
+- **Live approval gate:** at the gate beat the film **pauses and the operator approves live** via the existing §5.4 seam (`approve_rollback` + WS/POST decision). The human-in-the-loop moment is the film's thesis (NG-1) — it is *performed*, not replayed.
+- **Real Git rollback, scoped (replaces the mock body only):** `trigger_github_rollback` stops returning `"performed (mock)"` and performs a **real GitHub REST call creating a rollback tag** (`refs/tags/rollback-<incident>-<ts>` at the last-known-good SHA) against an env-configured throwaway repo (`NEXUSOPS_GITHUB_REPO` = `owner/repo`, `NEXUSOPS_GITHUB_TOKEN` = fine-grained PAT scoped to that one repo, `NEXUSOPS_GITHUB_LAST_GOOD_SHA` optional overrides repo default-branch tip).
+  | Axis | Stdlib `urllib` REST (chosen) | `PyGithub` package |
+  |---|---|---|
+  | Cost | zero new dependencies | +1 package to pin and maintain |
+  | Complexity | ~30 lines, one function; raw HTTP codes surfaced | simpler syntax, but a whole abstraction layer for one call |
+  | Failure visibility | 401/404/timeout surface directly, mapped by us | library-wrapped errors hide the raw shape |
+  **Tag chosen over revert-commit:** a tag marks the recovery point without rewriting history (reversible, verifiable via API) — the standard CD "rollback marker" pattern. A revert *commit* (real code change) stays in the B roadmap — heavier, can conflict. **Gate invariant unchanged:** approval check stays *before* the API call; no approval ⇒ rejected (NG-1). Any API failure (401/404/timeout) is loud → D-6 manual_review, never a silent pass.
+- **Key hygiene (parking-lot lesson applied):** token lives in `.env` only (gitignored), scoped to one throwaway repo, never logged/rendered; the film labels the target repo on screen so the claim "it actually rolled back" is honest and scoped.
+- **Requirements impact:** NG-2 amended — the rollback tool's backend becomes real-but-scoped while everything else stays mock; requires editing the FR-2 tool table note (§5.2) and NG-2 wording.
+- Context7 VERIFIED — GitHub REST refs API (`POST /repos/{owner}/{repo}/git/refs`, `GET .../git/ref/tags/{tag}`) confirmed via Context7 docs (2026-09-23); no new Python library.
+
+### D-11 Live operations console — React/Vite frontend + true-live single-incident cycle (2026-09-23)
+- **Problem:** the user rejected the film player as the *main* frontend ("very simple, does not look like a proper production thing") and asked for a **proper frontend** plus a **live system** that runs one complete cycle on a single incident while watched. The build must be the real machine (real models, real gate, real scoped rollback for D-10), not a replay.
+- **Frontend — Pattern B: React/Vite SPA with Tailwind v4** (user choice; **explicit zero-bloat override, recorded**):
+  | Axis | A: polished single-file HTML (recommended by engineer) | B: React/Vite SPA (chosen by user) |
+  |---|---|---|
+  | Cost | zero new deps | Node toolchain + ~200 packages (node_modules); permanent build/version-churn tax |
+  | Looks "production"? | yes with craft | yes by default — framework signaling + Tailwind utility styling |
+  | Failure modes | nothing to toolchain-break | npm install/Vite/Tailwind version drift; build step must pass before FastAPI can serve `dist/` |
+  | Complexity | one crafted file | component tree + hooks + Vite config + TS config + WS client |
+  Decision recorded with the trade-off made explicit: the user knowingly accepted the toolchain for the production look. The film (D-10) is **kept as a history tab**, mounted at `/film` inside the same serve process — not deleted (it stays the offline, zero-quota review path).
+- **"Live" — true live, real models** (user choice): every cycle = real webhook enqueue → real LangGraph pipeline → real Gemini calls (SLM `gemini-3.5-flash-lite` classify/plain RCA, frontier `gemini-3.8-flash` on escalation, D-4/D-9) → **human-operated gate** → real scoped GitHub tag rollback on approve (D-10). Cost honest: ≈1–2 SLM + ≤1 frontier call per incident (≤5% of the 20/day frontier budget). If the frontier is down, the cycle **honestly degrades** to `manual_review` with the recorded reason (D-6) — the console renders that as a failed run, never fakes success.
+- **The two missing pieces the build must add (verified absent in code, 2026-09-23):**
+  1. **The machine has no voice.** The EventBus + WS (D-1/FR-6) exist, but nothing publishes stage events — the bus only carries decisions today (producer side never wired; `grep` over `app/` confirms zero pipeline publishers). The console needs `ingest → classified → escalating → tool_call → plan → gate_open → decision → rollback → done` emitted live.
+  2. **The gate is operated by a robot today.** `consume_loop`/`drive_incident` (benchmark) auto-decides at the gate via a sync `operator` callable. A live demo needs *a human* — the graph must park and wait for the operator's click through the real §5.4 contract.
+- **Voice mechanism — Pattern A: driver-level `astream(stream_mode="updates")`** (chosen over per-node hook injection):
+  | Axis | A: driver-level astream (chosen) | B: inject publish hooks into every `make_*_node` |
+  |---|---|---|
+  | Complexity | one new driver; **zero changes to `state_machine.py`** | touches all node constructors + their tests |
+  | Failure modes | depends on LangGraph stream semantics — **empirically probed** (LangGraph 1.2.11): each node chunk streams as `{node: update}`, the gate `interrupt()` **arrives as a real streamed `__interrupt__` chunk carrying the plan**, and `Command(resume=...)` cleanly resumes the same thread with the remaining chunks (`gate → rollback → resolved`). Local probe in `/tmp` (2026-09-23). | hook contract drift across 6 nodes; more surface to forget |
+  | Cost | ~1 new module | edits across the file |
+  Pattern A maps chunks to the FR-6 vocabulary: `classify→classified`, `escalate→escalating`, `evidence→tool_call`, `rca→plan` (or `manual_review` when the node carries `manual_review_reason`), `__interrupt__→gate_open` (plan from interrupt value), `rollback→rollback`, `resolved|rejected|manual_review→done`.
+- **Human gate seam — Pattern A: asyncio-Future "waiting room"**:
+  | Axis | A: GateAwaiter future registry (chosen) | B: resume graph from the socket directly (dashboard's current `resume_incident`) |
+  |---|---|---|
+  | Complexity | tiny registry: `wait(iid)`/`resolve(iid, body)` | already exists |
+  | Concurrency correctness | **single-writer**: the driver is the only actor touching the graph thread — it publishes `gate_open`, awaits `wait(iid)`, then runs the phase-2 `astream(Command(resume=...))`. The WS/POST decision handler (same §5.4 validation as dashboard `_route_decision`, reused) only **resolves the future**; the driver wakes, resumes, emits `rollback`/`done`. No two tasks can resume the same checkpoint (no race). | two writers (socket + driver) on the same thread → resume race; decision event ordering fragile |
+  | Failure modes | second decision → future already done → `already_decided` (loud, first-wins, matches §5.4); operator never decides → incident parks forever (correct — the gate is a real pause, D-3 accepts losing it on restart) | double-resume risk |
+  The `_route_decision` validation + "decision" event publishing from `app/dashboard.py` is **imported, not duplicated**; only the injected `resume_incident` differs (resolves the future instead of invoking the graph — same seam the dashboard already accepts).
+- **Serve process — one FastAPI app is the whole system** (`app/serve.py`): `POST /webhook/incident` (reuses the ingest helper, publishes `ingest`), `GET /api/fixtures`, `GET /api/status`, `WS /ws` (live events down, §5.4 up), `/film` mounted player, and `frontend/dist/` static at `/` (SPA served by FastAPI in prod; Vite dev server proxies `/ws|/webhook|/api` to FastAPI in dev, `ws:true`). Background consume loop (BRPOP → LiveDriver) runs inside the app lifespan. Incidents process one at a time (sequential loop — matches the "single incident cycle" ask; a parked gate blocks later work by design, documented).
+- **Budget/constraints honored:** every pipeline stage still runs inside the existing OpenTelemetry spans (D-7); no model-logic changes; Redis stays a hard dependency (NFR-6); the rollback tool remains the real-but-scoped GitHub tag (D-10), github env missing → loud 502 (never a silent "performed").
+- Context7 VERIFIED — React (`createRoot` from `react-dom/client`, 19.x), Vite (server.proxy incl. `ws:true`, `dist` build output), Tailwind CSS v4 (`@tailwindcss/vite` plugin + CSS `@import "tailwindcss"` — no config file), LangGraph 1.2.11 `astream(updates)`/`interrupt`/`Command(resume=...)` confirmed by **local empirical probe** (2026-09-23).
+- **Requirements impact:** FR-10 (live operations console) + §5.5 (live gate notes) added; FR-6's "producer side" is finally wired (the console *is* the FR-6 dashboard's production form). NG-2/NG-4 unchanged.
+
 ## 2. System Architecture
 
 ```

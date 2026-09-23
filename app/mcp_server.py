@@ -1,7 +1,10 @@
-"""NexusOps — Feature 2: MCP server exposing three mock tools (NG-2).
+"""NexusOps — Feature 2: MCP server exposing the pipeline's tool surface (NG-2).
 
-Real MCP protocol, fake backends. stdio transport (Phase 1 decision: the state
-machine spawns this as a local subprocess). Deterministic mock data (NFR-5).
+Real MCP protocol, stdio transport (Phase 1 decision: the state machine spawns
+this as a local subprocess). Two tools are deterministic mocks with real error
+semantics (NFR-5); `trigger_github_rollback` has a REAL BUT SCOPED backend per
+D-10 — it performs an actual rollback-tag creation on the env-configured
+throwaway repo, gated by §5.4 approval (NG-1).
 
 Error semantics (§5.2): "service has no logs in window" -> empty result;
 "service does not exist" -> raise ToolError (is_error=True), never a silent
@@ -17,6 +20,8 @@ from datetime import datetime, timedelta, timezone
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+
+from app.rollback import RollbackError, perform_github_rollback
 
 mcp = MCPServer("nexusops")
 
@@ -116,11 +121,21 @@ def query_prometheus_metrics(metric_name: str, duration: str) -> dict:
 
 @mcp.tool()
 def trigger_github_rollback(commit_sha: str) -> dict:
-    """Gated rollback: rejected unless the incident is gate-approved (§5.2)."""
+    """Gated rollback: rejected unless the incident is gate-approved (§5.2).
+
+    NG-1 invariant lives HERE, before any API call: without approval we return
+    `rejected` and never touch the network. With approval, the real scoped
+    backend (D-10) creates + verifies a rollback tag on the throwaway repo.
+    Any backend failure is loud (ToolError -> D-6 manual_review), never a
+    silent "performed".
+    """
     CALL_LOG.append({"tool": "trigger_github_rollback", "args": {"commit_sha": commit_sha}})
     if commit_sha not in _APPROVED:
         return {"status": "rejected", "message": "gate not approved for this commit"}
-    return {"status": "performed", "message": f"rollback to {commit_sha} performed (mock)"}
+    try:
+        return perform_github_rollback(commit_sha)
+    except RollbackError as exc:
+        raise ToolError(str(exc)) from exc
 
 
 if __name__ == "__main__":

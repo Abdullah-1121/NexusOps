@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Probe-guarded benchmark record retry (2026-09-22).
-# Free-tier Nvidia models 503 "provider overloaded" in congested windows.
+# Probe-guarded benchmark record retry (2026-09-22, provider-neutral since D-9).
+# The record consumes the SLM quota (Gemini Flash-Lite, ~500 req/day) but a
+# congested window or a quota-exhausted 429 can fail calls; in-process retries
+# multiplied the burn until the whole window was dead (2026-09-22 lesson,
+# fixed in app/models.py `_quota_exhausted` + retries capped at 2 in benchmark.py).
 # Strategy: probe with 1 tiny call; only run the full record when the probe
 # answers, else sleep and retry. Stops after MAX_TRIES or when a record with
 # >= MIN_ANSWERED incidents completes. Never burns 25 calls on a dead window.
+# NOTE: the probe endpoint is NOT hard-coded — it follows NEXUSOPS_LLM_API_URL
+# from .env, so both providers (OpenRouter then, Gemini now) work unchanged.
 set -u
 cd "$(dirname "$0")/.."
 
@@ -14,10 +19,21 @@ MIN_ANSWERED="${MIN_ANSWERED:-8}"
 SLEEP_MIN="${SLEEP_MIN:-20}"
 
 probe() {
-  curl -s --max-time 30 https://openrouter.ai/api/v1/chat/completions \
+  curl -s --max-time 30 "$NEXUSOPS_LLM_API_URL/chat/completions" \
     -H "Authorization: Bearer $NEXUSOPS_LLM_API_KEY" -H "Content-Type: application/json" \
     -d "{\"model\":\"$NEXUSOPS_SLM_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":3}" \
-    | python3 -c "import json,sys;d=json.load(sys.stdin);sys.exit(0 if 'choices' in d and d['choices'][0].get('message',{}).get('content') else 1)"
+    | python3 -c "
+import json,sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+items = d if isinstance(d, list) else [d]
+if any(isinstance(x, dict) and x.get('error') for x in items):
+    sys.exit(1)
+choices = d.get('choices') if isinstance(d, dict) else items[0].get('choices') if items else None
+sys.exit(0 if choices else 1)
+"
 }
 
 answered() {

@@ -66,15 +66,44 @@ def test_mock_data_is_order_independent_and_repeatable():
     assert first == second
 
 
-def test_rollback_gate_blocks_before_approval():
+def test_rollback_gate_blocks_before_approval(monkeypatch):
+    """NG-1: no approval ⇒ rejected, and NO HTTP call is ever made."""
+    calls: list = []
+
+    def fake_request(method, path, **kw):
+        calls.append((method, path))
+        raise AssertionError("gate block must never reach the network")
+
+    monkeypatch.setattr("app.rollback._request", fake_request)
     result = trigger_github_rollback("abc123")
     assert result["status"] == "rejected"
+    assert calls == []
 
 
-def test_rollback_performed_after_approval():
+def test_rollback_performed_after_approval(monkeypatch):
+    """Approved ⇒ real scoped rollback: tag created + verified (D-10)."""
+    created: list = []
+
+    def fake_request(method, path, **kw):
+        if method == "POST" and path.endswith("/git/refs"):
+            created.append(path)
+            return 201, {"ref": f"refs/tags/{kw['body']['ref'].split('/')[-1]}", "object": {"sha": "t0"}}
+        if method == "GET" and "/git/ref/tags/" in path:
+            return 200, {"ref": path, "object": {"sha": "t0"}}
+        if path == "/repos/owner/demo":
+            return 200, {"default_branch": "main"}
+        if path == "/repos/owner/demo/git/ref/heads/main":
+            return 200, {"object": {"sha": "t0"}}
+        raise AssertionError(f"unexpected call {method} {path}")
+
+    monkeypatch.setattr("app.rollback._request", fake_request)
+    monkeypatch.setenv("NEXUSOPS_GITHUB_REPO", "owner/demo")
+    monkeypatch.setenv("NEXUSOPS_GITHUB_TOKEN", "tok")
     approve_rollback("abc123")
     result = trigger_github_rollback("abc123")
     assert result["status"] == "performed"
+    assert result["verified"] is True
+    assert created, "the real rollback must make a tag-create call"
 
 
 def test_every_call_is_trace_visible():

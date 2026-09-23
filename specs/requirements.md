@@ -17,6 +17,7 @@ It is a **triage and proposal system**, not an unattended auto-healing system. A
 - Human-in-the-loop approval gate before any remediation.
 - Automated benchmark/regression harness over synthetic incidents.
 - Full-step tracing and observability.
+- Demonstration film: deterministic replay player over recorded runs with a live approval gate and a real scoped rollback (FR-9).
 
 ### Out of scope (see §7 Non-Goals)
 - Unattended remediation, retry, or failover actions.
@@ -94,6 +95,21 @@ Numbering is `FR-<n>`. Each carries an **acceptance check** (how we prove it's s
 
 **Acceptance:** `benchmark` command exits non-zero on any rubric failure or SLA breach; outputs a machine-readable report.
 
+### FR-9 — Demonstration film (replay player over recorded runs)
+- A player renders a recorded benchmark checkpoint (`outG1.json`) as a per-incident timeline of beats: alert → severity → evidence → plan → gate → decision → rollback → terminal.
+- The film is **deterministic and offline**: it reads saved frames, never invokes a model, plays identically every time (zero quota).
+- At the gate beat the film **performs the human-in-the-loop moment live**: the operator approves/rejects via the same decision contract as production (§5.4), and an approved rollback **executes the real scoped GitHub tag rollback** (D-10) against the throwaway repo.
+
+**Acceptance:** Playing the checkpoint produces the full beat sequence for every incident; an approved gate on a rollback-worthy incident creates a verifiable `rollback-*` tag on the configured repo; the player renders a recorded outage honestly (terminal `manual_review` with the recorded reason).
+
+### FR-10 — Live operations console (true-live single-incident cycle)
+- One FastAPI **serve process** (D-11) hosts: the ingest webhook (reusing the FR-1 dedupe/enqueue helper), a background pipeline worker consuming the real Redis queue, a WebSocket stream, the fixture catalog API, and the frontend build.
+- The pipeline **emits its stages live** — the EventBus producer side of FR-6: `ingest, classified, escalating, tool_call, plan, gate_open, decision, rollback, done, manual_review` — streamed in order over the WebSocket with reconnect catch-up.
+- The §5.4 gate is **human-operated**: the graph parks, the console renders the plan, and only the operator's click resumes it; a rejected incident reaches no rollback path.
+- The frontend is a **React/Vite/Tailwind operations console** (production look requested by user; explicit zero-bloat override recorded in D-11): incident picker, live stage timeline, gate panel, honest terminal states (including model-down runs degrading to `manual_review`), system status. The feature-6 film remains reachable as the **history tab** (zero-quota offline review).
+
+**Acceptance:** Running a full cycle on one fixture while watching the console produces every stage in order, parks at the gate with the plan, resumes on a human decision, and executes the real scoped rollback on approve (D-10) — with a second decision refused (`already_decided`) and a model-down run rendered as an honest `manual_review` failure.
+
 ## 4. Non-Functional Requirements — SLAs & Guarantees
 
 - **NFR-1 Latency:** P95 triage time (alert received → staged at human gate) < **2.5 seconds** on the reference machine, for incidents handled by the **SLM-only path**. Incidents escalated to the frontier model are excluded from this target and reported separately in the benchmark (their latency depends on an external vendor).
@@ -134,10 +150,10 @@ Validation rules:
 |---|---|---|
 | `fetch_service_logs` | `service_name: str`, `timestamp_window: {start, end}` | `{logs: [{timestamp, level, message}]}` — empty list if none |
 | `query_prometheus_metrics` | `metric_name: str`, `duration: str` (e.g. `"30m"`) | `{series: [{timestamp, value}]}` |
-| `trigger_github_rollback` | `commit_sha: str` | `{status: "approved"\|"rejected"\|"performed", message}` |
+| `trigger_github_rollback` | `commit_sha: str` | `{status: "approved"\|"rejected"\|"performed", message, tag?, sha?, verified?}` — on success the details of the created rollback tag (D-10); never touches production |
 
 - Tools **MUST fail loudly**: a fetch for an unknown service returns a structured `{error}` result, never a silent empty for a genuinely missing thing masking as success. (Distinguish "service has no logs in window" from "service does not exist".)
-- `trigger_github_rollback` is a **mock** in this phase: it validates the gate and returns `performed` only after approval; it never touches a real repo.
+- `trigger_github_rollback` is **real but scoped** (design D-10): it validates the gate and, after approval, creates a rollback **tag** (`refs/tags/rollback-<incident>-<ts>`) on an env-configured throwaway repo (`NEXUSOPS_GITHUB_REPO` + fine-grained `NEXUSOPS_GITHUB_TOKEN`); it never touches production, never rewrites history. Without approval it returns `rejected` without any API call (FR-5).
 
 ### 5.3 Remediation plan output contract
 Strict JSON, produced by the analysis stage, consumed by the human gate + dashboard.
@@ -180,6 +196,9 @@ How the operator's decision reaches the gate (FR-5). Two accepted channels — a
 
 **Acceptance:** Sending `approve` then running the benchmark's rollback-worthy fixture results in the mock rollback tool firing once. Sending `reject` results in no tool firing and `state=rejected`.
 
+### 5.5 Live gate notes (serve mode)
+Wording: in the serve process (D-11) the §5.4 decision reaches a parked incident **indirectly**: the socket/POST handler (same validation as §5.4) resolves an in-process "waiting room" future, and the pipeline driver — the single writer on that incident's checkpoint — resumes the graph with the decision. `already_decided` (first wins) and strict `approve|reject` validation are unchanged; a rejected incident never touches any rollback path (NG-1).
+
 ## 6. Benchmark & Acceptance Suite
 
 - **B-1:** 30 synthetic incidents covering: critical (rollback-worthy), warning, info, malformed-log-source (empty evidence), ambiguous severity (frontier escalation path), duplicate delivery.
@@ -190,9 +209,9 @@ How the operator's decision reaches the gate (FR-5). Two accepted channels — a
 ## 7. Non-Goals (explicitly NOT building — yet)
 
 - **NG-1:** Unattended auto-healing. No destructive action executes without prior human approval. This is a hard boundary, not a v1 simplification.
-- **NG-2:** Real production access. All tools are mocks; MCP is real, backends are fake.
+- **NG-2:** Real production access. All tools are mocks **except** `trigger_github_rollback`, whose backend is real-but-scoped to a throwaway repo (design D-10); MCP is real, other backends are fake.
 - **NG-3:** Multi-tenancy / user authN beyond a single shared API key.
-- **NG-4:** Post-mortem analytics, trend reports, or historical incident dashboards.
+- **NG-4:** Post-mortem analytics, trend reports, or historical incident dashboards. (The FR-9 demo film is explicitly **not** a historical analytics view — it's a deterministic replay of recorded runs for demonstration, scoped by design D-10.)
 - **NG-5:** On-call paging, escalation, or incident communication tools.
 
 ## 8. Constraints & Assumptions

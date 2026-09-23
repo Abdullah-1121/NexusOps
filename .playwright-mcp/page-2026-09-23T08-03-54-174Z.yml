@@ -1,0 +1,62 @@
+- generic [active] [ref=f2e1]:
+  - banner [ref=f2e2]:
+    - heading "NexusOps — demonstration film" [level=1] [ref=f2e3]
+    - generic [ref=f2e4]: a deterministic replay of a recorded run · live human gate · real scoped rollback
+  - main [ref=f2e5]:
+    - generic [ref=f2e6]:
+      - heading "Recorded incidents" [level=2] [ref=f2e7]
+      - generic [ref=f2e8]:
+        - generic [ref=f2e9] [cursor=pointer]:
+          - generic [ref=f2e10]: a-01
+          - generic [ref=f2e11]: db
+          - generic [ref=f2e12]: manual_review
+        - generic [ref=f2e13] [cursor=pointer]:
+          - generic [ref=f2e14]: a-02
+          - generic [ref=f2e15]: auth
+          - generic [ref=f2e16]: resolved
+        - generic [ref=f2e17] [cursor=pointer]:
+          - generic [ref=f2e18]: c-01
+          - generic [ref=f2e19]: db
+          - generic [ref=f2e20]: manual_review
+        - generic [ref=f2e21] [cursor=pointer]:
+          - generic [ref=f2e22]: c-02
+          - generic [ref=f2e23]: auth
+          - generic [ref=f2e24]: rollback
+          - generic [ref=f2e25]: resolved
+        - generic [ref=f2e26] [cursor=pointer]:
+          - generic [ref=f2e27]: i-01
+          - generic [ref=f2e28]: db
+          - generic [ref=f2e29]: resolved
+        - generic [ref=f2e30] [cursor=pointer]:
+          - generic [ref=f2e31]: i-02
+          - generic [ref=f2e32]: search
+          - generic [ref=f2e33]: resolved
+        - generic [ref=f2e34] [cursor=pointer]:
+          - generic [ref=f2e35]: m-01
+          - generic [ref=f2e36]: dangling
+          - generic [ref=f2e37]: resolved
+        - generic [ref=f2e38] [cursor=pointer]:
+          - generic [ref=f2e39]: m-02
+          - generic [ref=f2e40]: orphan
+          - generic [ref=f2e41]: rejected
+        - generic [ref=f2e42] [cursor=pointer]:
+          - generic [ref=f2e43]: w-01
+          - generic [ref=f2e44]: db
+          - generic [ref=f2e45]: resolved
+        - generic [ref=f2e46] [cursor=pointer]:
+          - generic [ref=f2e47]: w-02
+          - generic [ref=f2e48]: auth
+          - generic [ref=f2e49]: resolved
+    - generic [ref=f2e50]:
+      - generic [ref=f2e51]:
+        - button "⏮" [ref=f2e52] [cursor=pointer]
+        - button "◀" [ref=f2e53] [cursor=pointer]
+        - button "⏸ Pause" [ref=f2e57] [cursor=pointer]
+        - button "▶" [ref=f2e55] [cursor=pointer]
+        - button "⏭" [ref=f2e56] [cursor=pointer]
+        - generic [ref=f2e58]: beat 2 / 7
+      - generic [ref=f2e60]:
+        - generic [ref=f2e61]: severity
+        - generic [ref=f2e62]: Severity classified
+        - generic [ref=f2e63]: "recorded severity: critical — escalated to the frontier model (D-4)"
+        - generic [ref=f2e64]: "ground truth expected: critical"

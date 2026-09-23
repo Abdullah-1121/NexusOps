@@ -1,0 +1,18 @@
+[     170ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8137/favicon.ico:0
+[ 2390008ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8137/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/assets/index-exvsm3Cj.js:48
+[ 2391191ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0
+[ 2392015ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8137/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/assets/index-exvsm3Cj.js:48
+[ 2394191ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0
+[ 2396018ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8137/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/assets/index-exvsm3Cj.js:48
+[ 2397194ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0
+[ 2400191ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0
+[ 2403191ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0
+[ 2404023ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8137/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/assets/index-exvsm3Cj.js:48
+[ 2406191ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0
+[ 2409191ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0
+[ 2412027ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8137/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/assets/index-exvsm3Cj.js:48
+[ 2412193ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0
+[ 2415193ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0
+[ 2418194ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0
+[ 2420033ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8137/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/assets/index-exvsm3Cj.js:48
+[ 2421191ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8137/api/status:0

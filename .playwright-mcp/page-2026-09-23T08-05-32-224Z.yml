@@ -1,0 +1,62 @@
+- generic [active] [ref=f4e1]:
+  - banner [ref=f4e2]:
+    - heading "NexusOps — demonstration film" [level=1] [ref=f4e3]
+    - generic [ref=f4e4]: a deterministic replay of a recorded run · live human gate · real scoped rollback
+  - main [ref=f4e5]:
+    - generic [ref=f4e6]:
+      - heading "Recorded incidents" [level=2] [ref=f4e7]
+      - generic [ref=f4e8]:
+        - generic [ref=f4e9] [cursor=pointer]:
+          - generic [ref=f4e10]: a-01
+          - generic [ref=f4e11]: db
+          - generic [ref=f4e12]: manual_review
+        - generic [ref=f4e13] [cursor=pointer]:
+          - generic [ref=f4e14]: a-02
+          - generic [ref=f4e15]: auth
+          - generic [ref=f4e16]: resolved
+        - generic [ref=f4e17] [cursor=pointer]:
+          - generic [ref=f4e18]: c-01
+          - generic [ref=f4e19]: db
+          - generic [ref=f4e20]: manual_review
+        - generic [ref=f4e21] [cursor=pointer]:
+          - generic [ref=f4e22]: c-02
+          - generic [ref=f4e23]: auth
+          - generic [ref=f4e24]: rollback
+          - generic [ref=f4e25]: resolved
+        - generic [ref=f4e26] [cursor=pointer]:
+          - generic [ref=f4e27]: i-01
+          - generic [ref=f4e28]: db
+          - generic [ref=f4e29]: resolved
+        - generic [ref=f4e30] [cursor=pointer]:
+          - generic [ref=f4e31]: i-02
+          - generic [ref=f4e32]: search
+          - generic [ref=f4e33]: resolved
+        - generic [ref=f4e34] [cursor=pointer]:
+          - generic [ref=f4e35]: m-01
+          - generic [ref=f4e36]: dangling
+          - generic [ref=f4e37]: resolved
+        - generic [ref=f4e38] [cursor=pointer]:
+          - generic [ref=f4e39]: m-02
+          - generic [ref=f4e40]: orphan
+          - generic [ref=f4e41]: rejected
+        - generic [ref=f4e42] [cursor=pointer]:
+          - generic [ref=f4e43]: w-01
+          - generic [ref=f4e44]: db
+          - generic [ref=f4e45]: resolved
+        - generic [ref=f4e46] [cursor=pointer]:
+          - generic [ref=f4e47]: w-02
+          - generic [ref=f4e48]: auth
+          - generic [ref=f4e49]: resolved
+    - generic [ref=f4e50]:
+      - generic [ref=f4e51]:
+        - button "⏮" [disabled] [ref=f4e52]
+        - button "◀" [disabled] [ref=f4e53]
+        - button "⏸ Pause" [ref=f4e57] [cursor=pointer]
+        - button "▶" [ref=f4e55] [cursor=pointer]
+        - button "⏭" [ref=f4e56] [cursor=pointer]
+        - generic [ref=f4e58]: beat 1 / 5
+      - generic [ref=f4e65]:
+        - generic [ref=f4e66]: alert
+        - generic [ref=f4e67]: Alert lands
+        - generic [ref=f4e68]: db / prometheus — connection pool exhausted
+        - generic [ref=f4e69]: "incident c-01 at 2026-09-08T12:00:00Z (severity hint: critical)"

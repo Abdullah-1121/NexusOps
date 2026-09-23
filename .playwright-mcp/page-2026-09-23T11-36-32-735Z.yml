@@ -1,0 +1,26 @@
+- generic [ref=f2e3]:
+  - banner [ref=f2e4]:
+    - generic [ref=f2e5]:
+      - heading "NEXUSOPS" [level=1] [ref=f2e6]
+      - generic [ref=f2e7]: live operations console
+    - navigation [ref=f2e8]:
+      - button "Live" [ref=f2e9]
+      - button "History" [ref=f2e10]
+    - generic [ref=f2e11]: streaming
+  - generic [ref=f2e13]:
+    - complementary [ref=f2e14]:
+      - generic [ref=f2e15]:
+        - heading "System" [level=2] [ref=f2e16]
+        - generic [ref=f2e17]:
+          - generic [ref=f2e18]:
+            - generic [ref=f2e19]: Redis
+            - generic [ref=f2e20]: …
+          - generic [ref=f2e22]:
+            - generic [ref=f2e23]: Queue depth
+            - generic [ref=f2e24]: …
+          - generic [ref=f2e25]:
+            - generic [ref=f2e26]: Gates waiting
+            - generic [ref=f2e27]: …
+      - heading "Run an incident" [level=2] [ref=f2e29]
+    - main [ref=f2e31]:
+      - generic [ref=f2e32]: Pick an incident on the left — the machine does the rest, you hold the gate.

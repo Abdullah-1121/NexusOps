@@ -1,0 +1,55 @@
+- generic [active] [ref=f1e1]:
+  - banner [ref=f1e2]:
+    - heading "NexusOps — demonstration film" [level=1] [ref=f1e3]
+    - generic [ref=f1e4]: a deterministic replay of a recorded run · live human gate · real scoped rollback
+  - main [ref=f1e5]:
+    - generic [ref=f1e6]:
+      - heading "Recorded incidents" [level=2] [ref=f1e7]
+      - generic [ref=f1e8]:
+        - generic [ref=f1e9] [cursor=pointer]:
+          - generic [ref=f1e10]: a-01
+          - generic [ref=f1e11]: db
+          - generic [ref=f1e12]: manual_review
+        - generic [ref=f1e13] [cursor=pointer]:
+          - generic [ref=f1e14]: a-02
+          - generic [ref=f1e15]: auth
+          - generic [ref=f1e16]: resolved
+        - generic [ref=f1e17] [cursor=pointer]:
+          - generic [ref=f1e18]: c-01
+          - generic [ref=f1e19]: db
+          - generic [ref=f1e20]: manual_review
+        - generic [ref=f1e21] [cursor=pointer]:
+          - generic [ref=f1e22]: c-02
+          - generic [ref=f1e23]: auth
+          - generic [ref=f1e24]: rollback
+          - generic [ref=f1e25]: resolved
+        - generic [ref=f1e26] [cursor=pointer]:
+          - generic [ref=f1e27]: i-01
+          - generic [ref=f1e28]: db
+          - generic [ref=f1e29]: resolved
+        - generic [ref=f1e30] [cursor=pointer]:
+          - generic [ref=f1e31]: i-02
+          - generic [ref=f1e32]: search
+          - generic [ref=f1e33]: resolved
+        - generic [ref=f1e34] [cursor=pointer]:
+          - generic [ref=f1e35]: m-01
+          - generic [ref=f1e36]: dangling
+          - generic [ref=f1e37]: resolved
+        - generic [ref=f1e38] [cursor=pointer]:
+          - generic [ref=f1e39]: m-02
+          - generic [ref=f1e40]: orphan
+          - generic [ref=f1e41]: rejected
+        - generic [ref=f1e42] [cursor=pointer]:
+          - generic [ref=f1e43]: w-01
+          - generic [ref=f1e44]: db
+          - generic [ref=f1e45]: resolved
+        - generic [ref=f1e46] [cursor=pointer]:
+          - generic [ref=f1e47]: w-02
+          - generic [ref=f1e48]: auth
+          - generic [ref=f1e49]: resolved
+    - generic [ref=f1e51]:
+      - button "⏮" [disabled] [ref=f1e52]
+      - button "◀" [disabled] [ref=f1e53]
+      - button "▶ Play" [ref=f1e54] [cursor=pointer]
+      - button "▶" [disabled] [ref=f1e55]
+      - button "⏭" [disabled] [ref=f1e56]

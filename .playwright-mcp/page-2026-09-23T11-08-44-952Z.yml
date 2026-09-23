@@ -1,0 +1,36 @@
+- generic [ref=f1e3]:
+  - banner [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - heading "NEXUSOPS" [level=1] [ref=f1e6]
+      - generic [ref=f1e7]: live operations console
+    - navigation [ref=f1e8]:
+      - button "Live" [ref=f1e9]
+      - button "History" [ref=f1e10]
+    - generic [ref=f1e11]: streaming
+  - generic [ref=f1e13]:
+    - complementary [ref=f1e14]:
+      - generic [ref=f1e15]:
+        - heading "System" [level=2] [ref=f1e16]
+        - generic [ref=f1e17]:
+          - generic [ref=f1e18]:
+            - generic [ref=f1e19]: Redis
+            - generic [ref=f1e20]: …
+          - generic [ref=f1e22]:
+            - generic [ref=f1e23]: Queue depth
+            - generic [ref=f1e24]: …
+          - generic [ref=f1e25]:
+            - generic [ref=f1e26]: Gates waiting
+            - generic [ref=f1e27]: …
+      - heading "Run an incident" [level=2] [ref=f1e29]
+    - main [ref=f1e31]:
+      - generic [ref=f1e32]:
+        - generic [ref=f1e34]:
+          - heading "?" [level=2] [ref=f1e35]
+          - generic [ref=f1e36]: 1 stages
+        - list [ref=f1e37]:
+          - listitem [ref=f1e38]:
+            - generic [ref=f1e42]:
+              - generic [ref=f1e43]:
+                - generic [ref=f1e44]: Pipeline error
+                - generic [ref=f1e45]: "#1"
+              - generic [ref=f1e46]: pipeline driver failure

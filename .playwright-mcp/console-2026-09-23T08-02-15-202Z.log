@@ -1,0 +1,11 @@
+[     201ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8137/favicon.ico:0
+[   25495ms] TypeError: Cannot read properties of null (reading 'classList')
+    at render (http://127.0.0.1:8137/:99:56)
+    at step (http://127.0.0.1:8137/:112:3)
+    at play (http://127.0.0.1:8137/:106:75)
+    at select (http://127.0.0.1:8137/:88:3)
+[   30106ms] TypeError: Cannot read properties of null (reading 'classList')
+    at render (http://127.0.0.1:8137/:99:56)
+    at step (http://127.0.0.1:8137/:112:3)
+    at play (http://127.0.0.1:8137/:106:75)
+    at select (http://127.0.0.1:8137/:88:3)

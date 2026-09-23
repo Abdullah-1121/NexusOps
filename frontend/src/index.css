@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/* Tailwind v4 CSS-first theme (D-11) — a quiet dark ops console palette. */
+@theme {
+  --color-nexus-bg: #0b0e14;
+  --color-nexus-panel: #12161f;
+  --color-nexus-raise: #171d2a;
+  --color-nexus-border: #1f2735;
+  --color-nexus-text: #e6eaf2;
+  --color-nexus-muted: #8b94a7;
+  --color-nexus-accent: #22d3ee;
+  --color-nexus-green: #34d399;
+  --color-nexus-amber: #fbbf24;
+  --color-nexus-red: #f87171;
+  --color-nexus-blue: #60a5fa;
+
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-nexus-bg);
+  color: var(--color-nexus-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin scrollbars for the ops feel */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3343 transparent;
+}

@@ -69,16 +69,29 @@ async def lifespan(app: FastAPI):
     await redis_client.aclose()
 
 
+async def enqueue_alert(redis_client, dedupe_script, alert: IncidentAlert) -> int:
+    """Atomic dedupe + enqueue: SADD then LPUSH cannot be interrupted between
+    steps, so a crash can never mark an alert seen without queueing it (NFR-4).
+    Returns the script's `added`: 1 = newly enqueued, 0 = duplicate.
+
+    Shared by the webhook route (below) and the serve app (Feature 7) so the
+    dedupe contract lives once (requirements §5.1 / FR-1). Raises
+    `aioredis.RedisError` on any Redis failure — the caller decides the HTTP
+    shape (503, NFR-6), never a silent swallow.
+    """
+    return await dedupe_script(
+        keys=[DEDUPE_KEY, QUEUE_KEY],
+        args=[alert.incident_id, alert.model_dump_json()],
+    )
+
+
 app = FastAPI(title="NexusOps", lifespan=lifespan)
 
 
 @app.post("/webhook/incident", status_code=202)
 async def ingest_incident(alert: IncidentAlert):
     try:
-        added = await app.state.dedupe_script(
-            keys=[DEDUPE_KEY, QUEUE_KEY],
-            args=[alert.incident_id, alert.model_dump_json()],
-        )
+        added = await enqueue_alert(app.state.redis, app.state.dedupe_script, alert)
     except aioredis.RedisError:
         # NFR-6: refuse loudly, and 503 (not 500) so the sender treats it as
         # "retry later", not "your payload is broken". Catching the base class
