@@ -1,6 +1,6 @@
 # Feature 7 — Live Operations Console
 
-Status: **in-progress** (Phase 1 approved — D-11, 2026-09-23).
+Status: **done** (D-11 approved 2026-09-23; all 5 phases per task + live browser proof 2026-09-24; serve-runtime postmortems in D-11).
 Owns: the serve-mode live server + the React/Vite/Tailwind operations console + the pipeline's stage-event voice. Shared contracts live in `specs/requirements.md` (§5, FR-5/6) and `specs/design.md` (D-1, D-3, D-4, D-6, D-7, D-9, D-10, D-11); this file references them, never duplicates them.
 
 ## 1. What this feature is
@@ -19,6 +19,7 @@ The thesis demo becomes a **real running system**: one FastAPI process serves th
 - **Human gate:** GateAwaiter asyncio-Future registry; the WS/POST decision handler resolves the future (same `_route_decision` validation as dashboard, imported), the driver owns the phase-2 resume → no two tasks resume one checkpoint.
 - **Serve process:** one FastAPI app hosting webhook + `/api/fixtures` + `/api/status` + `/ws` + `/film` (player mount) + `frontend/dist` static.
 - **Frontend:** React 19 + Vite + Tailwind v4 (`@tailwindcss/vite`, CSS `@import "tailwindcss"`), TypeScript; dev via Vite proxy (`ws:true`), prod via FastAPI static.
+- **Operations (verified live 2026-09-24):** `scripts/run_console.py --smoke` runs the no-quota rehearsal mode (zero-token fakes, flushes the queue + seen-set at startup — console-only sandbox); real models are the default when env is configured. The picker's fire button posts `?force=1` (bypasses the dedupe seen-set — console rehearsal only; plain POSTs stay dedupe-by-default, FR-1). Re-firing the same incident opens a **fresh gate** (D-11 postmortem #1/reset). The `/film` history player's API lives under the mount (`/film/api/...`) — its embedded JS uses relative fetches (postmortem #3). An idle worker is silent: the natural `brpop` timeout logs nothing (postmortem #4).
 
 ## 4. Acceptance
 

@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 import redis.asyncio as aioredis
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -235,11 +236,12 @@ async def consume_loop(
     `shutdown_event` is the graceful-stop guardrail (postmortem 2026-09-23,
     shutdown log): while a brpop's async_timeout is expiring, redis-py can
     CONSUME uvicorn's injected CancelledError and convert it to a redis
-    TimeoutError (asyncio/timeouts.py uncancel+re-raise). The generic except
-    then looped straight back into brpop, so the lifespan's `await task` never
-    completed — the observed "SIGTERM ignored, needed SIGKILL" on two servers.
-    The loop re-checks the event after every item and after any fetch failure,
-    so graceful shutdown always terminates promptly.
+    TimeoutError (asyncio/timeouts.py uncancel+re-raise). TimeoutError is
+    handled as the silent idle wakeup (async brpop raises instead of returning
+    None), and any other failure re-loops too — so the lifespan's `await task`
+    ALWAYS sees the loop come back to the `shutdown_event` check and exit. The
+    measured `await task` hangs on two earlier servers happened because the
+    generic except swallowed that TimeoutError and looped without re-checking.
     """
     shutdown_event = shutdown_event or asyncio.Event()
     while not shutdown_event.is_set():
@@ -254,14 +256,26 @@ async def consume_loop(
             await driver.run_once(alert)
         except asyncio.CancelledError:
             raise
+        except RedisTimeoutError:
+            # NATURAL IDLE, not a failure: async redis-py's brpop(timeout=5)
+            # never returns None — the read's async_timeout RAISES TimeoutError
+            # on every quiet boundary (the "if item is None" branch is dead in
+            # practice). This is the worker's steady-state heartbeat: re-check
+            # shutdown_event and loop, silently. Also covers redis-py converting
+            # uvicorn's injected CancelledError (postmortem 2026-09-23) — the
+            # loop then exits promptly via the event, exactly as graceful stop
+            # requires. Real failures (connection refused, redis down) raise
+            # ConnectionError/OSError, NOT TimeoutError, so they stay loud.
+            continue
         except Exception:
-            # Two failure classes, handled differently (postmortem 2026-09-23,
-            # shutdown log). With `iid == "?"` the exception happened while
-            # FETCHING the next item (brpop read timeout, incl. uvicorn's
-            # cancel converted to TimeoutError by redis-py) — no incident was
-            # in flight, so no incident-level `error` event and no phantom
-            # "?" incident in WS catch-up history; just a warning. Only a
-            # real incident id is a pipeline failure worth a loud error event.
+            # Abnormal fetch or pipeline failure (postmortem 2026-09-23): the
+            # natural brpop idle TimeoutError is handled ABOVE as silent
+            # continue, so what lands here is genuinely wrong. With `iid == "?"`
+            # the exception happened while FETCHING the next item (e.g. redis
+            # down → ConnectionError) — no incident was in flight, so no
+            # incident-level `error` event and no phantom "?" incident in WS
+            # catch-up history; just a warning. Only a real incident id is a
+            # pipeline failure worth a loud error event.
             if iid == "?":
                 logger.warning("worker fetch failed (redis)", exc_info=True)
                 continue

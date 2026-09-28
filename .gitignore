@@ -20,3 +20,6 @@ live1*_err.log
 judge*_report.json
 judge*_err.log
 golden_report.json
+
+# Browser-tool session artifacts (page snapshots, console logs)
+.playwright-mcp/

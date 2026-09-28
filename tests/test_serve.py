@@ -17,6 +17,7 @@ And (local Redis, DB 15 — integration, T-7.5):
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 
 import pytest
@@ -249,21 +250,20 @@ def test_gate_awaiter_first_decision_wins():
     asyncio.run(main())
 
 
-def test_consume_loop_shutdown_event_graceful_stop_after_fetch_failure():
-    """Postmortem 2026-09-23 (shutdown log): while a brpop's async_timeout is
-    expiring, redis-py can CONSUME uvicorn's injected CancelledError and
-    convert it to a redis TimeoutError (asyncio.timeouts uncancel + re-raise).
-    The generic except then looped straight back into brpop, so the lifespan's
-    `await task` never completed — the observed "SIGTERM ignored / SIGKILL
-    needed" on two servers. The shutdown event must make the loop exit at its
-    next boundary even when brpop keeps raising, so graceful stop always
-    completes. Fetch-level failures (no incident in flight) must also NOT leak
-    a phantom `?` incident into the bus history."""
+def test_consume_loop_idle_timeout_is_silent_and_graceful_stop_is_prompt(caplog):
+    """Postmortems 2026-09-23: async redis-py brpop(timeout=5) RAISES
+    TimeoutError on natural idle — it never returns None, so the worker's
+    steady state is one TimeoutError per quiet boundary. That idle heartbeat
+    must be SILENT (no 'worker fetch failed' warning, no phantom `?` incident),
+    and the loop must re-check shutdown_event at every boundary so graceful
+    stop always completes — the old generic except swallowed this TimeoutError
+    and re-looped past the event, causing the observed `await task` hang /
+    "SIGTERM ignored, needed SIGKILL" on two servers."""
 
     calls = 0
 
-    class _FetchFails:
-        """brpop that behaves like a redis-py read timeout / converted cancel.
+    class _IdleTimeout:
+        """brpop that behaves like the real async client on an idle queue.
 
         Must include an await point (as a real socket read does): the consume
         loop otherwise spins CPU-bound, never yields, and the test can't set
@@ -281,18 +281,23 @@ def test_consume_loop_shutdown_event_graceful_stop_after_fetch_failure():
         driver = LiveDriver(bus, awaiter, make_graph=_smoke_graph([]))
         reader = bus.subscribe()
         stop = asyncio.Event()
-        task = asyncio.create_task(consume_loop(_FetchFails(), driver, stop))
+        task = asyncio.create_task(consume_loop(_IdleTimeout(), driver, stop))
         try:
-            await asyncio.sleep(0.05)  # let a fetch failure land + be handled
-            assert calls >= 1
+            await asyncio.sleep(0.08)  # several idle boundaries land
+            assert calls >= 2  # heartbeat keeps beating, loop did not die
             assert reader.empty()  # no phantom "?" incident event
+            # idle is NOT a failure: the warning branch stays silent
+            assert not [
+                r for r in caplog.records if "worker fetch failed" in r.getMessage()
+            ], "every-5s idle TimeoutError must not log as a fetch failure"
             stop.set()
             await asyncio.wait_for(task, timeout=2.0)  # graceful, no hang
         finally:
             if not task.done():
                 task.cancel()
 
-    asyncio.run(main())
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(main())
 
 
 def test_make_resume_raises_when_nothing_awaiting():

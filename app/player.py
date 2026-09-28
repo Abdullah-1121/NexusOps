@@ -326,7 +326,10 @@ const $=id=>document.getElementById(id);
 const chip=t=>`<span class="chip ${t}">${t}</span>`;
 
 async function loadList(){
-  const res=await fetch("/api/films");
+  // Relative paths: PLAYER_HTML is served both standalone (root) and mounted
+  // under /film (the console's History tab). Absolute /api/... would 404 on
+  // the mount; "api/..." resolves against the page URL in both contexts.
+  const res=await fetch("api/films");
   const films=await res.json();
   $("items").innerHTML=films.map(f=>`
     <div class="film-item" data-id="${f.incident_id}" onclick="select('${f.incident_id}')">
@@ -339,7 +342,7 @@ async function loadList(){
 async function select(id){
   state.incident=id;state.decided=false;state.playing=false;
   document.querySelectorAll(".film-item").forEach(e=>e.classList.toggle("active",e.dataset.id===id));
-  const res=await fetch(`/api/film/${id}`);
+  const res=await fetch(`api/film/${id}`);
   const f=await res.json();
   state.beats=f.beats;state.index=-1;$("result").innerHTML="";
   render();
@@ -383,7 +386,7 @@ function showLiveGate(){
 }
 async function decide(decision){
   state.decided=true;
-  const res=await fetch(`/api/film/${state.incident}/decision`,{method:"POST",headers:{"content-type":"application/json"},
+  const res=await fetch(`api/film/${state.incident}/decision`,{method:"POST",headers:{"content-type":"application/json"},
     body:JSON.stringify({decision,actor:"demo-operator"})});
   const out=await res.json();
   const src=res.ok?"#3fb950":"#f85149";

@@ -234,11 +234,43 @@ every run honors (the provider is wired from `.env` before the tracer SDK boots)
 Override per-run with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` for a full URL, or
 unset the var to fall back to stderr.
 
+### 6. Live operations console (the demo machine)
+
+One process IS the live system — webhook, pipeline worker, WebSocket stream,
+human gate, real scoped rollback, and the frontend:
+
+```bash
+# Rehearsal mode — deterministic fakes, ZERO model quota, seconds
+.venv/bin/python -m scripts.run_console --smoke            # serves on :8137
+
+# Real mode — live Gemini calls when .env carries the key (D-9), default
+.venv/bin/python -m scripts.run_console --port 8137
+# --keep-redis  do NOT flush the queue + seen-set at startup (console sandbox)
+```
+
+Then open **http://localhost:8137**:
+
+1. **Live tab** — pick a fixture ("fire live") or POST any valid alert to
+   `/webhook/incident`. The pipeline streams every stage: classified →
+   escalating → evidence → plan → **GATE OPEN**.
+2. **The gate is a human (NG-1).** The pipeline parks; you click **Approve
+   rollback** (real scoped GitHub tag rollback when `NEXUSOPS_GITHUB_REPO`/
+   `TOKEN` are set, D-10) or **Reject** (nothing fires). A second decision on
+   the same gate is refused (`already_decided`, first wins). Re-firing the same
+   fixture opens a **fresh** gate — each run needs its own human decision.
+3. **History tab** — the feature-6 film (offline replay of a recorded run,
+   honest `manual_review` included) mounted at `/film`.
+
+Console-only rehearsal details: the picker fires with `?force=1` (bypasses the
+dedupe seen-set so you can re-run a fixture; plain webhook POSTs stay dedupe-
+by-default). Incidents run one at a time (a parked gate blocks later work by
+design).
+
 ### Tests
 
 ```bash
 .venv/bin/python -m pytest tests/
-# → 59 passed
+# → 90 passed
 ```
 
 ---
@@ -264,11 +296,13 @@ unset the var to fall back to stderr.
 
 ## Status
 
-All five features are closed through the full 5-phase pipeline (architecture →
+All seven features are closed through the full 5-phase pipeline (architecture →
 minimalism → implementation → adversarial review → conceptual validation). The
-benchmark ran live end-to-end on free-tier providers; the pipeline and its
-honesty guarantees are verified, and an LLM-judge semantic verdict is one funded
-key away (`python -m scripts.run_live_benchmark`).
+live console runs one complete incident cycle end-to-end — real webhook → real
+pipeline → human gate → real scoped rollback — with honest `manual_review` on
+model/provider downtime. The benchmark ran live on free-tier providers; an
+LLM-judge semantic verdict is one funded key away
+(`python -m scripts.run_live_benchmark`).
 
 Detailed, authoritative records live in `specs/` — feature acceptance criteria,
 decision log, and per-feature task histories including live-run findings.

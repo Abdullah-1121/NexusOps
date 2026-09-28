@@ -219,3 +219,41 @@ class TestFilmPlayer:
         r = client.post("/api/film/c-02/decision", json={"decision": "approve", "actor": "tester"})
         assert r.status_code == 502
         assert "missing required env" in r.json()["detail"]
+
+    def test_player_works_mounted_under_film_history_tab(self):
+        """Regression: serve.py mounts the player at /film, so its API lives at
+        /film/api/... The embedded JS must use RELATIVE fetch paths — absolute
+        /api/... resolved to the server root and 404'd, crashing the History
+        tab with 'films.map is not a function'."""
+        raw = json.loads(json.dumps(_record()))
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        host = FastAPI()
+        host.mount("/film", player.create_player_app(raw))
+        client = TestClient(host)
+
+        # the film page is served under the mount...
+        page = client.get("/film/")
+        assert page.status_code == 200
+        assert "demonstration film" in page.text
+        # ...and every fetch the page makes is relative (resolves under /film)
+        for bad in ('fetch("/api/', "fetch(`/api/"):
+            assert bad not in page.text, f"absolute API fetch regressed: {bad}"
+
+        # the API is reachable at the mounted prefix, not the server root
+        root = client.get("/api/films")
+        assert root.status_code == 404
+        films = client.get("/film/api/films")
+        assert films.status_code == 200
+        assert any(f["incident_id"] == "c-02" for f in films.json())
+
+        # decisions flow through the mounted prefix too
+        detail = client.get("/film/api/film/c-02")
+        assert detail.status_code == 200
+        r = client.post(
+            "/film/api/film/m-02/decision", json={"decision": "reject", "actor": "tester"}
+        )
+        assert r.status_code == 200
+        assert r.json()["status"] == "rejected"
