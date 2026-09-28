@@ -50,6 +50,21 @@ def _model_failure(reason: str) -> dict:
     return {"manual_review_reason": reason}
 
 
+def _failure_reason(stage: str, exc: Exception) -> str:
+    """D-15: turn any model-call exception into a readable, classified reason.
+
+    The old `f"SLM unavailable: {exc!r}"` rendered exception reprs whose str()
+    could be empty (observed live: a flat transport flap rendered as a bare
+    "model error"). Composed sentence answers three questions the operator
+    actually has: which stage, what CLASS of failure (quota vs transient vs
+    contract), and what the provider said. `kind` rides ModelError; anything
+    unexpected still gets a never-empty detail via the class-name fallback.
+    """
+    kind = getattr(exc, "kind", "unknown")
+    detail = str(exc).strip() or type(exc).__name__
+    return f"{stage} failed ({kind}): {detail}"
+
+
 def make_classify_node(classify: ModelFn) -> Callable:
     async def classify_node(state: IncidentState) -> dict:
         try:
@@ -69,7 +84,7 @@ def make_classify_node(classify: ModelFn) -> Callable:
                 CONFIDENCE_SCHEMA,
             )
         except Exception as exc:  # D-6: model error -> manual_review, loud
-            return _model_failure(f"SLM unavailable: {exc!r}")
+            return _model_failure(_failure_reason("SLM classify", exc))
         return {
             "severity": result["severity"],
             "affected_service": result["affected_service"],
@@ -138,6 +153,10 @@ def make_rca_node(rca: ModelFn) -> Callable:
                             "item contradicts your hypothesis, revise the hypothesis until "
                             "nothing contradicts it. Each remediation step (action/target) "
                             "must be justified by at least one evidence item; name which one. "
+                            "The reasoning field must explain your chain explicitly: why this "
+                            "root cause and not the alternatives, how each cited evidence item "
+                            "supports or refutes it, and why these remediation actions and this "
+                            "order. Write it as prose an on-call engineer can defend. "
                             "requires_approval must be true — every plan is subject to a "
                             "mandatory human gate (NG-1). Reflect the classified "
                             f"severity={state.get('severity')!r} "
@@ -159,7 +178,7 @@ def make_rca_node(rca: ModelFn) -> Callable:
                 RCA_SCHEMA,
             )
         except Exception as exc:  # D-6
-            return _model_failure(f"{'FF' if state.get('escalated') else 'SLM'} RCA unavailable: {exc!r}")
+            return _model_failure(_failure_reason("RCA", exc))
         # NG-1 gate invariant: the human approval gate is a SYSTEM rule, not a
         # model choice. Whatever the model wrote, a plan entering the system is
         # always subject to the gate — override here, at the single choke point,

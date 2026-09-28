@@ -18,9 +18,10 @@ export default function GatePanel({
 }: {
   incidentId: string;
   events: NexusEvent[];
-  decide: (id: string, d: "approve" | "reject") => void;
+  decide: (id: string, d: "approve" | "reject", reason?: string) => void;
 }) {
   const [submitting, setSubmitting] = useState<"approve" | "reject" | null>(null);
+  const [reason, setReason] = useState("");
   const last = events[events.length - 1];
   const open = last?.type === "gate_open";
   const gate = events.find((e) => e.type === "gate_open");
@@ -46,7 +47,7 @@ export default function GatePanel({
 
   const onDecide = (d: "approve" | "reject") => {
     setSubmitting(d);
-    decide(incidentId, d);
+    decide(incidentId, d, reason || undefined);
   };
 
   /* After the click and through the pipeline tail, show the confirmation —
@@ -109,6 +110,16 @@ export default function GatePanel({
           <p className="text-[13.5px] font-medium leading-snug text-nexus-text">
             {plan?.root_cause_hypothesis ?? "(none offered)"}
           </p>
+          {plan?.reasoning && (
+            <div className="mt-3">
+              <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-nexus-faint">
+                Why this plan
+              </h3>
+              <p className="text-[12.5px] leading-relaxed text-nexus-muted">
+                {plan.reasoning}
+              </p>
+            </div>
+          )}
           <div className="mt-3 space-y-1">
             <div className="flex items-baseline justify-between gap-3 text-[11px]">
               <span className="font-medium uppercase tracking-wide text-nexus-faint">
@@ -181,12 +192,24 @@ export default function GatePanel({
         </div>
       </div>
 
-      <footer className="flex flex-col gap-2.5 border-t border-nexus-border bg-nexus-raise/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <footer className="flex flex-col gap-2.5 border-t border-nexus-border bg-nexus-raise/40 px-4 py-3">
         <p className="text-[11.5px] leading-snug text-nexus-muted">
           Approving executes the scoped rollback for real — nothing is faked.
           Rejecting ends this incident: <span className="font-medium text-nexus-text">no action is taken.</span>
         </p>
-        <div className="flex shrink-0 gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10.5px] font-medium uppercase tracking-wide text-nexus-faint">
+            Why this decision (optional — recorded with the gate)
+          </span>
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            disabled={submitting !== null}
+            placeholder="e.g. matches the deploy window; authorizing rollback"
+            className="rounded-md border border-nexus-border bg-nexus-panel px-3 py-1.5 text-[12.5px] text-nexus-text placeholder:text-nexus-faint focus:border-nexus-accent focus:outline-none disabled:opacity-50"
+          />
+        </label>
+        <div className="flex shrink-0 justify-end gap-2">
           <button
             onClick={() => onDecide("reject")}
             disabled={submitting !== null}

@@ -9,6 +9,10 @@ export interface FixtureIncident {
   service: string;
   message: string;
   severity_hint: "critical" | "warning" | "info" | null;
+  /** D-16: the problem envelope — sender-provided prose + structured facts */
+  status_code?: number;
+  summary?: string | null;
+  context?: Record<string, unknown> | null;
 }
 
 export interface SystemStatus {
@@ -29,11 +33,15 @@ export interface RemediationStep {
 
 export interface Plan {
   root_cause_hypothesis?: string;
+  /** D-16: the WHY-chain — the model's prose reasoning behind the hypothesis */
+  reasoning?: string;
   confidence?: number;
   severity?: string;
   affected_service?: string;
   remediation_steps?: RemediationStep[];
   requires_approval?: boolean;
+  /** evidence items the RCA cited in support of the hypothesis */
+  evidence?: string[];
 }
 
 export interface NexusEvent {

@@ -10,8 +10,8 @@ import pytest
 from app import benchmark as bench
 from app.models import ModelError, RCA_SCHEMA
 
-ALERT_FIELDS = ("severity", "affected_service", "root_cause_hypothesis", "confidence",
-                "remediation_steps", "requires_approval", "evidence")
+ALERT_FIELDS = ("severity", "affected_service", "root_cause_hypothesis", "reasoning",
+                "confidence", "remediation_steps", "requires_approval", "evidence")
 
 
 def _plan(ground: dict) -> dict:
@@ -19,6 +19,7 @@ def _plan(ground: dict) -> dict:
         "severity": ground["severity"],
         "affected_service": "auth",
         "root_cause_hypothesis": ground["root_cause_hypothesis"],
+        "reasoning": "Deterministic reasoning chain for the plan-under-test.",
         "confidence": 0.9,
         "remediation_steps": [
             {"action": "rollback", "target": "x", "reason": ground["root_cause_hypothesis"]}

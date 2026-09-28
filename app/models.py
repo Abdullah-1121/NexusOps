@@ -68,18 +68,29 @@ class ModelError(RuntimeError):
     `retryable=True` marks transient failures worth a bounded retry (network
     timeout, 429, 5xx, empty content) — never hard provider errors like 401/402
     or a strict JSON contract violation.
+
+    `kind` (D-15, 2026-09-28) classifies the failure for the operator instead
+    of leaving a bare exception: transport (network/timeout), http (provider
+    answer), quota (daily cap — non-retryable), schema (strict-JSON contract),
+    empty (HTTP 200 with no content), config (missing env). The message is
+    NEVER empty: composition falls back to the cause's class name so the
+    console can always tell the operator *what* failed and *what class* it is.
     """
 
-    def __init__(self, message: str, *, status_code: int | None = None, retryable: bool = False):
+    def __init__(
+        self, message: str, *, status_code: int | None = None,
+        retryable: bool = False, kind: str = "unknown",
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.retryable = retryable
+        self.kind = kind
 
 
 def _env(name: str, default: str | None) -> str:
     value = os.environ.get(name, default)
     if value is None:
-        raise ModelError(f"{name} not set — refusing to run without a model provider")
+        raise ModelError(f"{name} not set — refusing to run without a model provider", kind="config")
     return value
 
 
@@ -102,7 +113,10 @@ def _enforce_json(text: str, model: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError as e:
-        raise ModelError(f"model {model} returned unparsable JSON (strict contract): {e}") from e
+        raise ModelError(
+            f"model {model} returned unparsable JSON (strict contract): {e}",
+            kind="schema",
+        ) from e
 
 
 async def complete_json(
@@ -177,21 +191,40 @@ async def _chat(
                 json=payload,
             )
         except httpx.HTTPError as e:
-            # transport error or timeout — transient, safe to retry
-            raise ModelError(f"LLM request failed for {model}: {e}", retryable=True) from e
+            # transport error or timeout — transient, safe to retry. D-15: the
+            # message must NEVER be empty (observed live: an httpx cause with
+            # str() == "" rendered as a bare "LLM request failed for X: "), so
+            # fall back to the exception class name when the provider gives no
+            # detail — the operator still learns the class (transport) and the
+            # direction (retryable).
+            detail = str(e).strip() or type(e).__name__
+            raise ModelError(
+                f"LLM transport failure for {model}: {detail}",
+                retryable=True, kind="transport",
+            ) from e
     if response.status_code >= 400:
+        body = str(response.text).strip()[:200]
+        if _quota_exhausted(body):
+            # TERMINAL daily-cap (Gemini/OpenRouter free-tier): retrying burns
+            # the retry window on a quota that resets on a provider schedule,
+            # not within ours (2026-09-22 postmortem). Kind-tagged so the
+            # operator learns "provider daily cap" — fund the key or wait.
+            raise ModelError(
+                f"model {model} hit its daily quota cap: {body or 'exceeded quota'}",
+                status_code=response.status_code, retryable=False, kind="quota",
+            )
         raise ModelError(
-            f"LLM request failed for {model}: HTTP {response.status_code} {str(response.text)[:200]}",
+            f"model {model} returned HTTP {response.status_code}: {body or '(empty response body)'}",
             status_code=response.status_code,
-            retryable=(response.status_code == 429 or response.status_code >= 500)
-            and not _quota_exhausted(str(response.text)),
+            retryable=(response.status_code == 429 or response.status_code >= 500),
+            kind="http",
         )
     body = response.json()
     if "error" in body or "choices" not in body:
         # Some providers answer HTTP 200 with an error body (free-tier models
         # do this). It is still a model failure: typed ModelError, never a raw
         # KeyError — D-6 nodes and the benchmark route on ModelError.
-        raise ModelError(f"LLM returned no completion for {model}: {body}")
+        raise ModelError(f"LLM returned no completion for {model}: {body}", kind="http")
     if usage_sink is not None:
         usage_sink(model, body.get("usage", {}))
     _span_attrs(body, model)
@@ -204,6 +237,7 @@ async def _chat(
             f"model {model} returned no text content: {str(body)[:200]}",
             status_code=200,
             retryable=True,
+            kind="empty",
         )
     return _enforce_json(content, model)
 
@@ -238,6 +272,12 @@ RCA_SCHEMA = {
         "severity": {"type": "string", "enum": ["critical", "warning", "info"]},
         "affected_service": {"type": "string"},
         "root_cause_hypothesis": {"type": "string"},
+        # D-16 (2026-09-28): the WHY-chain — the model explains, in its own
+        # words, why this hypothesis (evidence -> inference), how each cited
+        # evidence item supports or refutes it, and why these actions in this
+        # order. Required so the operator never sees a bare hypothesis with no
+        # defensible reasoning behind it.
+        "reasoning": {"type": "string"},
         "confidence": {"type": "number"},
         "remediation_steps": {
             "type": "array",
@@ -259,6 +299,7 @@ RCA_SCHEMA = {
         "severity",
         "affected_service",
         "root_cause_hypothesis",
+        "reasoning",
         "confidence",
         "remediation_steps",
         "requires_approval",

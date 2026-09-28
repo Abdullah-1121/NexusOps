@@ -47,9 +47,22 @@ def seed(limit: int | None = None) -> None:
         replay = api.post("/webhook/incident", json=dup.alert)
         assert replay.json()["duplicate"] is True  # seen-set is real
 
+        # Guardrail (postmortem 2026-09-28): a bare StopIteration here once hid a
+        # seed that wrote dup-01 to a Redis the sync client wasn't reading — the
+        # worst kind of failure (looks like env, is actually a silent cross-db
+        # write). Fail loudly with the queue depth and the client's own DB so a
+        # recurrence names itself instead of crashing opaquely.
         dup_raw = next(
-            v for v in client.lrange(QUEUE_KEY, 0, -1) if '"dup-01"' in v
+            (v for v in client.lrange(QUEUE_KEY, 0, -1) if '"dup-01"' in v),
+            None,
         )
+        if dup_raw is None:
+            db = client.connection_pool.connection_kwargs.get("db")
+            raise RuntimeError(
+                f"seed: dup-01 not found in {QUEUE_KEY} right after a 202 enqueue "
+                f"(llen={client.llen(QUEUE_KEY)}, client db={db}) — the ingest app "
+                f"wrote to a different Redis DB/URL than this client is reading."
+            )
         client.lrem(QUEUE_KEY, 0, dup_raw)  # pre-epoch entry -> out of this epoch
 
         # --limit N: seed a deterministic stratified slice (every category), so

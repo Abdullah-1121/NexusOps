@@ -71,7 +71,7 @@ export default function IncidentPicker({
                 </span>
               </div>
               <p className="mt-0.5 truncate text-[12px] text-nexus-muted">
-                {f.service} — {f.message}
+                {f.service} — {f.summary ?? f.message}
               </p>
               <div className="mt-1.5 flex items-center justify-between">
                 <span className="font-mono text-[10.5px] text-nexus-faint">

@@ -187,6 +187,18 @@ function StageDetail({ ev }: { ev: NexusEvent }) {
           <KV label="Source" value={<Mono>{pretty(ev.source)}</Mono>} />
           <KV label="Occurred at" value={<Mono>{pretty(ev.occurred_at)}</Mono>} />
           <KV label="Status code" value={<Mono>{pretty(ev.status_code)}</Mono>} />
+          {ev.summary ? (
+            <div className="rounded-md border border-nexus-border bg-nexus-raise/50 p-2.5 text-[12px] leading-relaxed text-nexus-text">
+              {String(ev.summary)}
+            </div>
+          ) : null}
+          {ev.context ? (
+            <div className="space-y-1">
+              {Object.entries(ev.context as Record<string, unknown>).map(([k, v]) => (
+                <KV key={k} label={k} value={<Mono>{pretty(v)}</Mono>} />
+              ))}
+            </div>
+          ) : null}
         </div>
       );
     }
@@ -279,6 +291,16 @@ function StageDetail({ ev }: { ev: NexusEvent }) {
               {plan.root_cause_hypothesis ?? "(none offered)"}
             </p>
           </div>
+          {plan.reasoning ? (
+            <div>
+              <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-nexus-faint">
+                Why this plan
+              </p>
+              <p className="rounded-md border border-nexus-border bg-nexus-raise/50 p-2.5 text-[12.5px] leading-relaxed text-nexus-text">
+                {plan.reasoning}
+              </p>
+            </div>
+          ) : null}
           {conf != null && (
             <div>
               <p className="mb-1 flex items-baseline justify-between text-[11px] font-medium uppercase tracking-wide text-nexus-faint">
@@ -312,6 +334,20 @@ function StageDetail({ ev }: { ev: NexusEvent }) {
             ) : null}
             <KV label="This stage took" value={<Mono>{fmtMs(ev.stage_duration_ms)}</Mono>} />
           </div>
+          {Array.isArray(plan.evidence) && plan.evidence.length > 0 && (
+            <div>
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-nexus-faint">
+                Evidence the model cited
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {plan.evidence.map((e, i) => (
+                  <Chip key={i} cls="border-nexus-blue/40 bg-nexus-blue/10 text-nexus-blue">
+                    {e}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
             <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-nexus-faint">
               Remediation steps ({plan.remediation_steps?.length ?? 0})
@@ -348,6 +384,12 @@ function StageDetail({ ev }: { ev: NexusEvent }) {
           />
           <KV label="Actor" value={<Mono>{pretty(ev.actor)}</Mono>} />
           <KV label="Waiting time" value={<Mono>{fmtMs(ev.gate_wait_ms)}</Mono>} />
+          {ev.reason ? (
+            <KV
+              label="Why"
+              value={<span className="text-[12.5px] leading-snug text-nexus-muted">{String(ev.reason)}</span>}
+            />
+          ) : null}
         </div>
       );
     }
@@ -626,7 +668,7 @@ function Summary({ ev }: { ev: NexusEvent }) {
     case "ingest":
       return (
         <p className="mt-0.5 truncate text-[12px] text-nexus-muted">
-          {String(ev.service)} · {String(ev.message)}
+          {String(ev.service)} · {String(ev.summary ?? ev.message ?? "")}
         </p>
       );
     case "classified":
@@ -682,6 +724,7 @@ function Summary({ ev }: { ev: NexusEvent }) {
       return (
         <p className="mt-0.5 truncate text-[12px] text-nexus-muted">
           {String(ev.decision)} by {String(ev.actor)}
+          {ev.reason ? ` — ${String(ev.reason)}` : ""}
         </p>
       );
     case "rollback": {

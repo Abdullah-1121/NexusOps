@@ -46,6 +46,7 @@ class Fixture:
 
 
 def _mk(iid: str, service: str, message: str, hint: str, gsev: str, rc: str) -> Fixture:
+    summary, context = _DETAIL.get(iid, _default_detail(service, message, hint))
     return Fixture(
         alert={
             "incident_id": iid,
@@ -53,8 +54,16 @@ def _mk(iid: str, service: str, message: str, hint: str, gsev: str, rc: str) -> 
             "source": "prometheus",
             "service": service,
             "severity_hint": hint,
-            "status_code": 0,
+            "status_code": _STATUS.get(iid, 0),
             "message": message,
+            # D-16 (2026-09-28): the alert envelope now carries the PROBLEM —
+            # a 1-2 sentence summary plus sender-provided structured facts — so
+            # the console's incident phase shows what the operator actually
+            # received, not just a one-line message. Static literals only
+            # (NFR-5 fixed data); context deliberately never leaks the ground
+            # truth (the root cause is what the evidence/MCP phase must find).
+            "summary": summary,
+            "context": context,
         },
         ground={
             "severity": gsev,
@@ -63,6 +72,108 @@ def _mk(iid: str, service: str, message: str, hint: str, gsev: str, rc: str) -> 
             "expected_decision": "approve",
         },
     )
+
+
+def _default_detail(service: str, message: str, hint: str) -> tuple[str, dict]:
+    """Deterministic fallback envelope for the long-tail w-*/i-* fixtures —
+    honest, neutral, and never leaking the fixture's ground-truth root cause."""
+    return (
+        f"{message.capitalize()} on {service}. Monitoring flag only; no "
+        "manual investigation notes attached.",
+        {
+            "signals": [f"prometheus alert ({hint or 'unspecified'} tier)"],
+            "window": "observed since 2026-09-08T12:00:00Z",
+            "recent_deploy": "none recorded in window",
+            "upstream_deps": ["none flagged"],
+        },
+    )
+
+
+# Flagship problem envelopes (D-16) — incident_id -> (summary, context).
+# The `context` fields are the alert the sender shipped: concrete, non-leaking.
+_DETAIL: dict[str, tuple[str, dict]] = {
+    "c-01": (
+        "Database connections are exhausting faster than the pool recycles them; "
+        "new queries queue behind a full pool and latency climbs with queue depth.",
+        {"signals": ["pool exhaustion error rate rising"], "affected_endpoints": ["/v1/db-checkout"],
+         "error_rate_pct": 4.2, "recent_deploy": "api 2.14.0 (2026-09-07)", "replicas_flapping": 3},
+    ),
+    "c-02": (
+        "Sign-in endpoint returned 5xx on an abrupt spike; auth errors climbed "
+        "from baseline minutes before the alert fired.",
+        {"signals": ["http 500 rate on /v1/signin"], "error_rate_pct": 6.8,
+         "recent_deploy": "auth 3.1.2 (2026-09-08 11:40Z)",
+         "affected_endpoints": ["/v1/signin", "/v1/refresh"]},
+    ),
+    "c-03": (
+        "Search p99 latency blew past 5s; queries that normally return in "
+        "milliseconds are timing out at the edge.",
+        {"signals": ["p99 > 5000ms for 15m"], "baseline_p99_ms": 320,
+         "affected_endpoints": ["/search/v3/query"], "recent_deploy": "search 4.2.0 (2026-09-08 10:00Z)"},
+    ),
+    "c-04": (
+        "Payment transactions failing at a rising rate; failures cluster on the "
+        "settlement write path.",
+        {"signals": ["deadlock counter climbing"], "error_rate_pct": 3.5,
+         "affected_endpoints": ["/v1/payments/settle"], "recent_deploy": "payments 2.8.1 (2026-09-07)"},
+    ),
+    "c-05": (
+        "API pod memory footprint climbing without plateauing; RSS is doubling "
+        "every few hours on the newest replicas.",
+        {"signals": ["rss monotonically rising on api-3..5"], "baseline_rss_mb": 900,
+         "recent_deploy": "api 2.14.0 (2026-09-07)", "affected_endpoints": ["/v1/events/stream"]},
+    ),
+    "c-06": (
+        "Queue consumers lagging behind producers; the lag trend is steepening "
+        "across all partitions.",
+        {"signals": ["consumer lag > 250k and rising"], "rate": "12k msg/s in",
+         "recent_deploy": "worker 1.9.3 (2026-09-08 09:00Z)"},
+    ),
+    "a-01": (
+        "Error rate ticked up to 0.1% but the pattern matches no known alert "
+        "signature — genuinely unclear.",
+        {"signals": ["error rate 0.1%, no correlate found"], "window": "sporadic over 3h"},
+    ),
+    "a-02": (
+        "Intermittent 401s in a pattern that does not line up with normal token "
+        "expiry behavior.",
+        {"signals": ["401 rate spiking every ~11 minutes"], "affected_endpoints": ["/v1/introspect"]},
+    ),
+    "a-03": (
+        "Refund flow under investigation; a share of refunds is failing "
+        "reconciliation against the ledger.",
+        {"signals": ["reconcile drift present"], "affected_endpoints": ["/v1/refunds"],
+         "recent_deploy": "payments 2.8.1 (2026-09-07)"},
+    ),
+    "a-04": (
+        "Latency spikes on one shared pod with no obvious traffic correlation to "
+        "explain them.",
+        {"signals": ["p95 spikes on api-7 only"], "affected_endpoints": ["/v1/search-adjacent"]},
+    ),
+    "a-05": (
+        "Search returning partial result sets; some index slices look stale or "
+        "incomplete.",
+        {"signals": ["slice coverage dropping"], "affected_endpoints": ["/search/v3/query"],
+         "recent_deploy": "search 4.2.0 (2026-09-08 10:00Z)"},
+    ),
+    "m-01": (
+        "Populated alert, but the log source rotated mid-stream — there is no "
+        "backing evidence left to analyze.",
+        {"signals": ["log stream ended abruptly"], "note": "gather will return empty"},
+    ),
+    "m-02": (
+        "Metrics source went dark entirely; nothing to gather from it.",
+        {"signals": ["metric stream silent"], "note": "gather will return empty"},
+    ),
+    "m-03": (
+        "Alert references a source that emits nothing at all; looks like a stale "
+        "alert rule.",
+        {"signals": ["no logs ever seen for id"], "note": "gather will return empty"},
+    ),
+}
+
+# Realistic HTTP-ish indicator of the reported problem, where one applies.
+_STATUS: dict[str, int] = {"c-02": 500, "i-03": 429, "a-05": 502}
 
 
 # 30 static fixtures covering B-1. No RNG — NFR-5 = fixed data.
@@ -191,6 +302,13 @@ async def smoke_rca(messages: list[dict], model_env: str, schema: dict) -> dict:
         "severity": ground.get("severity", "info"),
         "affected_service": alert.get("service"),
         "root_cause_hypothesis": ground.get("root_cause_hypothesis", "fixture cause"),
+        # D-16: deterministic reasoning chain for the smoke sink — always
+        # present (the RCA_SCHEMA now requires it), fixed text per fixture.
+        "reasoning": (
+            f"Smoke RCA: the alert text claims {alert.get('message')!r}; the "
+            "fixture's evidence records are consistent with the listed root "
+            "cause, and the remediation step directly addresses it."
+        ),
         "confidence": 0.9,
         "remediation_steps": [
             {
@@ -384,8 +502,8 @@ async def judge_checkpoint(path: str) -> dict:
 
 
 PLAN_REQUIRED_KEYS = frozenset({
-    "severity", "affected_service", "root_cause_hypothesis", "confidence",
-    "remediation_steps", "requires_approval", "evidence",
+    "severity", "affected_service", "root_cause_hypothesis", "reasoning",
+    "confidence", "remediation_steps", "requires_approval", "evidence",
 })
 """NFR-2 (§5.3) plan contract — single source of truth. `_plan_ok` checks it and
 the guardrail test asserts RCA_SCHEMA cannot drift away from it."""

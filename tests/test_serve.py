@@ -384,10 +384,17 @@ def test_serve_fixtures_api_leaks_no_ground_truth():
     with TestClient(create_serve_app(run_worker=False)) as client:
         cats = client.get("/api/fixtures").json()
     assert cats, "catalog must not be empty"
-    allowed = {"incident_id", "occurred_at", "source", "service", "message", "severity_hint"}
+    # D-16: the problem envelope (summary/context/status_code) rides the picker —
+    # it is sender-provided alert data, NOT ground truth, so it is safe to
+    # expose. Everything else stays out: the operator picks and decides blind.
+    allowed = {"incident_id", "occurred_at", "source", "service", "message", "severity_hint",
+               "status_code", "summary", "context"}
     for item in cats:
         assert set(item) == allowed
         assert "expected" not in item and "ground" not in item  # NG-1: operator decides
+    # the flagship problem envelopes are actually there (a rich incident phase
+    # requires the data to exist, not just the field to be allowed)
+    assert cats[0]["summary"] and isinstance(cats[0]["context"], dict) and len(cats[0]["context"]) >= 1
 
 
 def test_serve_status_reports_redis_and_queue():
@@ -406,7 +413,9 @@ def test_serve_webhook_publishes_ingest_and_duplicate_is_quiet():
     with TestClient(create_serve_app(run_worker=False, bus=bus)) as client:
         alert = {"incident_id": str(uuid.uuid4()), "occurred_at": "2026-09-23T12:00:00Z",
                  "source": "prometheus", "service": "auth", "message": "5xx spike",
-                 "severity_hint": "critical"}
+                 "severity_hint": "critical", "status_code": 500,
+                 "summary": "Sign-in 5xx spike since 11:40Z.",
+                 "context": {"affected_endpoints": ["/v1/signin"], "error_rate_pct": 6.8}}
         first = client.post("/webhook/incident", json=alert)
         second = client.post("/webhook/incident", json=alert)
     assert first.status_code == 202 and first.json()["duplicate"] is False
@@ -414,6 +423,13 @@ def test_serve_webhook_publishes_ingest_and_duplicate_is_quiet():
     assert {"type", "incident_id", "seq", "source", "service", "message", "severity_hint"} <= set(
         bus._history[alert["incident_id"]][0]
     ) and bus._history[alert["incident_id"]][0]["type"] == "ingest"
+    # D-16: the FULL alert envelope is published, not the old four fields —
+    # the operator sees occurred_at, status_code, summary and context.
+    ing = bus._history[alert["incident_id"]][0]
+    assert ing["occurred_at"] == "2026-09-23T12:00:00Z"
+    assert ing["status_code"] == 500
+    assert ing["summary"] == alert["summary"]
+    assert ing["context"] == alert["context"]
     # a duplicate publishes NO second `ingest` event (quiet, FR-1)
     assert len(bus._history[alert["incident_id"]]) == 1
 

@@ -196,6 +196,31 @@ After the real-mode demo the user asked whether the RCA stage — the only front
 
 **Chosen B, default `frontier` (D-4 semantics intact).** Honesty contract identical to classify's: the consuming node and the stamp read the **same** env, so the plan row can never name a model that didn't write the plan. `NEXUSOPS_RCA_MODEL=slm` (or `run_console --slm-rca`) drops the frontier out of the whole incident path — cheaper, faster, immune to the free-tier flapping, at the honest cost of shallower root-cause prose. The two readers are pinned by tests: the state-machine spy asserts which model env the node hands the model fn (escalated → frontier by default, SLM under override), and the driver test asserts `plan.model_env`, `escalating.depth_model`, and `/api/status.rca_model` all name the SLM under override — an aggregate one-line "rca_model" is the configuration snapshot; per-event stamps remain the runtime truth.
 
+### D-15 Opaque model failures → typed, never-empty reasons (2026-09-28, user-found)
+
+Live console report: *"we are getting the model error on every call."* Empirical diagnosis (two direct probes through the exact real path, `NEXUSOPS_SLM_MODEL` classify): call 1 failed with `ModelError("LLM request failed for gemini-3.5-flash-lite: ")` — **an empty message**; call 2 succeeded (critical/0.95). Conclusion: the failures are the provider's free-tier transient flapping (the D-13 retry window exists for exactly this), but the operator experience is broken for a different reason — **the failure text is empty**. `_chat` raises `f"...: {e}"` where the httpx cause produced an empty `str()`, and the state machine wraps it as `f"SLM unavailable: {exc!r}"` — so the console renders a bare "model error" that teaches nothing and reads as systemic. "Every call" was a flap burst (all calls land in `manual_review` while the provider is congested), amplified by an unreadable reason.
+
+| Option | What the operator sees | Failure modes / cost |
+|---|---|---|
+| A: keep as-is | "model error" with an empty tail | honest but opaque — the demo reads as broken, the real class is invisible |
+| B: typed, never-empty reasons (chosen) | `ModelError.kind ∈ {transport, http, quota, schema, empty, config}`; message construction falls back to the exception class name when `str(e)` is empty; the state machine composes `stage — kind — human detail`; UI tags the class (quota → red "provider daily cap", transport → amber "transient") | must thread `kind` through `_chat`/`ModelError`/nodes and pin both sides with tests |
+| C: vendor SDK error parsing | vendor-native codes | overkill — one provider today, two tomorrow, none share an error model |
+
+**Chosen B.** The printed reason always answers *what class of failure* (quota vs transient transport vs schema contract) and *what the operator can do* (fund the key / retry — the console already does / report a contract bug). Guardrail: a regression test injects an httpx-style cause whose `str()` is empty and asserts the composed ModelError message is non-empty AND kind-tagged; the D-6 nodes compose from `kind` so `manual_review` reasons are readable sentences, not exception reprs.
+
+### D-16 Operator detail batch — problem facts, plan reasoning, decision reason, MCP results (2026-09-28, user-found)
+
+Same live report, three UI gaps: *(1) "not enough details of the problem we are receiving in the incident phase,"* *(2) "not enough details in the reasoning section — we have to show the reasoning and why we take this decision,"* *(3) "there should be the result of the mcp calls to show."* Each is a small, honest data-flow fix — no new event types, no fabricated numbers:
+
+| Gap | A: status quo | B: chosen fix | Rejected |
+|---|---|---|---|
+| Incident phase | alert row shows service/source/message/hint | the `ingest` event already drops `occurred_at` + `status_code` (they were on the alert, never published) → publish them; fixtures gain a `summary` (1–2 sentence problem statement) + `context` (structured facts: endpoints, error rates, recent deploy, signals); incident record renders a "Problem" section | C: model-generated narrative — unnecessary token cost |
+| Reasoning section | plan has `root_cause_hypothesis` + per-step `reason` but no WHY-chain | `RCA_SCHEMA` gains required `reasoning` (the model explains: why this hypothesis, how each evidence item supports/refutes it, why these actions in this order); rendered prominently above the steps; the gate gains an optional operator-supplied `reason` ("why we take this decision") stored with the `decision` event | C: D-12 B2 token stream (already recorded as later toggle) |
+| MCP results | evidence rows show per-tool record counts; records hidden behind a click | `tool_call.evidence` was always carried in full — the incident record renders each returned record inline (timestamp/level/message) by default | — |
+| Cross-cutting | — | decision frame accepts optional `reason` (validated at the socket boundary); the console's Incident record + timeline render it | — |
+
+**Chosen B everywhere.** The decision `reason` is strictly optional (the gate must never require prose — NG-1 is the decision itself), passes through the same `_route_decision` validation seam, and rides the resume body so the checkpoint stores *why* with *what*. `RCA_SCHEMA.reasoning` adds one required string; smoke/benchmark fixtures and `PLAN_REQUIRED_KEYS` follow (both are pinned by existing schema-consistency tests). The incident `context` is sender-provided data, not ground truth — safe to expose on `/api/fixtures` (the fixtures-API test's allowed-field set grows explicitly).
+
 ## 2. System Architecture
 
 ```

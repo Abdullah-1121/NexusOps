@@ -54,6 +54,11 @@ class IncidentAlert(BaseModel):
     error_type: str | None = None
     stack_trace: str | None = None
     metadata: dict[str, object] = Field(default_factory=dict)
+    # D-16 (2026-09-28): the problem envelope — sender-provided prose + facts.
+    # Both optional so the Feature-1 contract keeps accepting minimal legacy
+    # alerts; when present the console renders them as the incident "Problem".
+    summary: str | None = None
+    context: dict[str, object] | None = None
 
 
 @asynccontextmanager

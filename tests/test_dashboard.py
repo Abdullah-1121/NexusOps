@@ -120,6 +120,47 @@ def test_decision_over_socket_delivers_exact_sec54_body_to_gate():
     assert (event["type"], event["decision"], event["actor"]) == ("decision", "approve", "ops")
 
 
+def test_decision_reason_rides_the_frame_and_the_event():
+    """D-16: an optional operator-supplied `reason` must reach the gate body
+    (the state the checkpoint stores) AND the published decision event — the
+    "why we take this decision" is the operator's own prose, never fabricated.
+    Absence stays absence: no reason -> no reason key anywhere (NG-1: prose is
+    never required, only the decision itself)."""
+    bus = EventBus()
+    delivered = []
+
+    async def resume(incident_id, body):
+        delivered.append((incident_id, body))
+
+    client = _client(bus, resume)
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"incident_id": "inc-9", "decision": "reject",
+                      "actor": "ops", "reason": "pre-existing known bad deploy"})
+        event = ws.receive_json()
+    assert delivered == [("inc-9", {"decision": "reject", "actor": "ops",
+                                    "reason": "pre-existing known bad deploy"})]
+    assert event["reason"] == "pre-existing known bad deploy"
+    assert event["type"] == "decision"
+
+
+def test_empty_reason_frame_is_a_loud_error():
+    """An empty/blank reason is a malformed optional — rejected loudly, not
+    silently dropped (the same trust boundary as the required fields)."""
+    bus = EventBus()
+    delivered = []
+
+    async def resume(incident_id, body):
+        delivered.append((incident_id, body))
+
+    client = _client(bus, resume)
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"incident_id": "inc-9", "decision": "approve", "actor": "ops", "reason": "   "})
+        err = ws.receive_json()
+    assert err["type"] == "error"
+    assert "reason" in err["error"]
+    assert delivered == []  # nothing resumed — no half-decided state
+
+
 def test_invalid_decision_frame_gets_loud_error_and_socket_survives():
     async def noop(incident_id, body):
         return None

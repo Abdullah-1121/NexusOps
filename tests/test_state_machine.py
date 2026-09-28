@@ -7,7 +7,9 @@ import pytest
 
 from langgraph.types import Command
 
-from app.state_machine import build_graph, route_escalation
+from app.models import ModelError
+from app.state_machine import (_failure_reason, build_graph, make_classify_node,
+                               route_escalation)
 
 ALERT = {
     "incident_id": "11111111-1111-1111-1111-111111111111",
@@ -23,6 +25,9 @@ PLAN = {
     "severity": "critical",
     "affected_service": "auth",
     "root_cause_hypothesis": "db overload",
+    "reasoning": "Evidence log-1 shows a saturated connection pool during the "
+                 "incident window, which matches the db-overload hypothesis; "
+                 "rolling back the deploy directly relieves the checkouts.",
     "confidence": 0.9,
     "remediation_steps": [
         {"action": "rollback", "target": "abc123", "reason": "bad deploy"}
@@ -185,3 +190,37 @@ def test_rca_node_locks_gate_invariant():
     assert out["plan"]["requires_approval"] is True  # system rule wins
     # everything else about the model's plan is preserved
     assert out["plan"]["root_cause_hypothesis"] == PLAN["root_cause_hypothesis"]
+
+
+# --- D-15: readable, classified manual_review reasons (2026-09-28) -------------
+
+
+def test_failure_reason_never_empty_and_kind_tagged():
+    # a Message whose str() is empty must still name the class (the fallback
+    # that fixes the live "bare model error" report)
+    msg = ModelError("")
+    assert str(msg) == ""
+    reason = _failure_reason("RCA", msg)
+    assert reason != "RCA failed (unknown): "
+    assert "ModelError" in reason
+    assert reason.startswith("RCA failed (unknown): ")
+
+
+def test_failure_reason_carries_kind_and_detail():
+    reason = _failure_reason(
+        "SLM classify", ModelError("hit its daily quota cap", kind="quota")
+    )
+    assert reason == "SLM classify failed (quota): hit its daily quota cap"
+
+
+def test_classify_failure_reason_is_a_readable_sentence_not_a_repr():
+    async def run():
+        class Boom():
+            async def __call__(self, messages, model_env, schema):
+                raise ModelError("exceeded quota", kind="quota")
+        n = make_classify_node(Boom())
+        return await n({"incident_id": "id-3", "alert": ALERT})
+
+    out = asyncio.run(run())
+    assert out["manual_review_reason"] == "SLM classify failed (quota): exceeded quota"
+    assert "ModelError(" not in out["manual_review_reason"]  # never an exception repr

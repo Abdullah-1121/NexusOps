@@ -58,10 +58,12 @@ export function useNexusSocket() {
     [],
   );
 
-  /** The §5.4 human decision — same contract the dashboard socket accepts. */
+  /** The §5.4 human decision — same contract the dashboard socket accepts.
+   *  `reason` (D-16) is the operator's optional "why" — stored with the
+   *  decision, never required (NG-1 is the decision itself). */
   const decide = useCallback(
-    (incident_id: string, decision: "approve" | "reject") => {
-      send({ incident_id, decision, actor: "console-operator" });
+    (incident_id: string, decision: "approve" | "reject", reason?: string) => {
+      send({ incident_id, decision, actor: "console-operator", reason: reason?.trim() || undefined });
     },
     [send],
   );

@@ -149,10 +149,25 @@ async def _route_decision(ws: WebSocket, bus: EventBus, resume_incident: ResumeF
             {"type": "error", "error": "incident_id, decision, actor are required strings"}
         )
         return
+    # D-16: why we take this decision. Optional — the gate must NEVER require
+    # prose (NG-1 is the decision itself), but when the operator supplies it
+    # the same validation seam forwards it into the checkpoint and the event.
+    reason = data.get("reason")
+    if reason is not None and not (isinstance(reason, str) and reason.strip()):
+        await ws.send_json(
+            {"type": "error", "error": "reason must be a non-empty string when provided"}
+        )
+        return
     try:
-        await resume_incident(incident_id, {"decision": decision, "actor": actor})
+        body = {"decision": decision, "actor": actor}
+        if reason is not None:
+            body["reason"] = reason  # D-16: stored with the decision, optional
+        await resume_incident(incident_id, body)
     except Exception:
         logger.exception("decision resume failed for %s", incident_id)
         await ws.send_json({"type": "error", "error": f"resume failed for {incident_id}"})
         return
-    bus.publish(incident_id, "decision", decision=decision, actor=actor)
+    event: dict[str, object] = {"decision": decision, "actor": actor}
+    if reason is not None:
+        event["reason"] = reason
+    bus.publish(incident_id, "decision", **event)

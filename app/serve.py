@@ -409,10 +409,21 @@ def create_serve_app(
             logger.exception("webhook rejected: redis unavailable")
             return JSONResponse(status_code=503, content={"error": "redis unavailable"})
         if added == 1:
+            # D-16: publish the FULL alert envelope the sender shipped — the old
+            # four-field event dropped occurred_at/status_code/error_type/
+            # metadata/summary/context, which is exactly why the incident phase
+            # looked thin. The operator sees what was received, nothing more.
             bus.publish(
                 alert.incident_id, "ingest",
+                occurred_at=alert.occurred_at,
                 source=alert.source, service=alert.service,
                 message=alert.message, severity_hint=alert.severity_hint,
+                status_code=alert.status_code,
+                error_type=alert.error_type,
+                stack_trace=alert.stack_trace,
+                metadata=alert.metadata,
+                summary=alert.summary,
+                context=alert.context,
             )
         return {"incident_id": alert.incident_id, "duplicate": added != 1}
 
@@ -428,6 +439,12 @@ def create_serve_app(
                 "service": f.alert["service"],
                 "message": f.alert["message"],
                 "severity_hint": f.alert.get("severity_hint"),
+                "status_code": f.alert.get("status_code", 0),
+                # D-16: the problem envelope rides the picker so the operator
+                # chooses WHICH incident to fire from the same detail they'll
+                # see in the incident phase. Ground truth still never leaves.
+                "summary": f.alert.get("summary"),
+                "context": f.alert.get("context"),
             }
             for f in catalog
         ]
