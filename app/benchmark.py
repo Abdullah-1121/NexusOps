@@ -129,6 +129,24 @@ def _ground_for(incident_id: str) -> dict | None:
 
 # --- deterministic smoke sinks (mode --smoke) --------------------------------
 
+def paced_stage(seconds: float, pace: float = 1.0):
+    """Smoke presentation primitive (2026-09-28): wrap a smoke fn so it awaits
+    `seconds * pace` before delegating. The console's `--smoke` build uses it to
+    make a <100 ms run visibly stream stage-by-stage (a fire otherwise reads as
+    "predefined"); `benchmark.py` itself never applies it, so benchmark and
+    test runs stay instant. `stage_duration_ms` then measures the paced stream's
+    real wall-clock — nothing fabricated, only delivered more slowly."""
+
+    def wrap(fn):
+        async def paced_fn(*args, **kwargs):
+            await asyncio.sleep(seconds * pace)
+            return await fn(*args, **kwargs)
+
+        return paced_fn
+
+    return wrap
+
+
 async def smoke_classify(messages: list[dict], model_env: str, schema: dict) -> dict:
     alert = json.loads(messages[-1]["content"].split("QUERY: ", 1)[1])
     ground = _ground_for(alert["incident_id"]) or {}

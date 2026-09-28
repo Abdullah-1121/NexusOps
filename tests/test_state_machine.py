@@ -89,6 +89,36 @@ def test_full_walk_approve_terminates_and_rolls_back(monkeypatch):
     assert any(c[0] == "rollback" for c in calls)
 
 
+def test_rca_node_model_env_honors_operator_config(monkeypatch):
+    """T-7.11 (2026-09-28): the consuming node's model choice follows
+    NEXUSOPS_RCA_MODEL. Default keeps D-4 — the frontier deep-dives escalated
+    incidents — and the override `slm` drops the frontier out of the WHOLE
+    pipeline, even on escalated incidents. This asserts the env the node
+    actually hands the model fn; serve._inspect asserts the stamp matches it
+    (one env, both sides)."""
+    from app.state_machine import make_rca_node
+
+    seen = {}
+
+    async def spy_rca(messages, model_env, schema):
+        seen["model_env"] = model_env
+        return PLAN
+
+    async def run(escalated):
+        node = make_rca_node(spy_rca)
+        return await node({**STATE, "escalated": escalated})
+
+    # default, escalated -> frontier deep-dive (D-4 preserved)
+    monkeypatch.delenv("NEXUSOPS_RCA_MODEL", raising=False)
+    asyncio.run(run(True))
+    assert seen["model_env"] == "NEXUSOPS_FRONTIER_MODEL"
+
+    # NEXUSOPS_RCA_MODEL=slm -> SLM even on an escalated incident
+    monkeypatch.setenv("NEXUSOPS_RCA_MODEL", "slm")
+    asyncio.run(run(True))
+    assert seen["model_env"] == "NEXUSOPS_SLM_MODEL"
+
+
 def test_reject_never_reaches_rollback():
     calls.clear()
     graph = build_graph(classify=_fake_classify, rca=_fake_rca, gather=_fake_evidence, rollback_tool=_spy_rollback)

@@ -14,6 +14,7 @@ network. The default wiring (build_default) uses real OpenRouter via
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Callable, Literal, Optional, TypedDict
 
 from langgraph.constants import END, START
@@ -111,7 +112,19 @@ def make_evidence_node(gather: EvidenceFn) -> Callable:
 
 def make_rca_node(rca: ModelFn) -> Callable:
     async def rca_node(state: IncidentState) -> dict:
-        model_env = "NEXUSOPS_FRONTIER_MODEL" if state.get("escalated") else "NEXUSOPS_SLM_MODEL"
+        # T-7.11 (2026-09-28): the depth-model choice is operator config, read
+        # here (the node that consumes it) AND in serve._inspect (the stamp that
+        # reports it) — one env, both sides, so the plan row can never name a
+        # model that didn't write the plan. Default keeps D-4 semantics: the
+        # frontier deep-dives escalated incidents. NEXUSOPS_RCA_MODEL=slm drops
+        # the frontier out of the whole pipeline (cheaper, faster, no free-tier
+        # 503 flapping — at the cost of shallower root-cause prose).
+        use_slm = (os.environ.get("NEXUSOPS_RCA_MODEL") or "frontier") == "slm"
+        model_env = (
+            "NEXUSOPS_SLM_MODEL"
+            if use_slm
+            else ("NEXUSOPS_FRONTIER_MODEL" if state.get("escalated") else "NEXUSOPS_SLM_MODEL")
+        )
         try:
             plan = await rca(
                 [

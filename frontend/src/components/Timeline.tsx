@@ -133,6 +133,21 @@ function fmtMs(ms: unknown): string {
 /* Run-state pill for the card header                                  */
 /* ------------------------------------------------------------------ */
 
+function SevChip({ severity }: { severity: string }) {
+  const sv = String(severity ?? "?");
+  const cls =
+    sv === "critical"
+      ? "border-nexus-red/40 bg-nexus-red/10 text-nexus-red"
+      : sv === "warning"
+        ? "border-nexus-amber/40 bg-nexus-amber/10 text-nexus-amber"
+        : sv === "info"
+          ? "border-nexus-blue/40 bg-nexus-blue/10 text-nexus-blue"
+          : "border-nexus-border text-nexus-muted";
+  return (
+    <Chip cls={cls}>{sv.toUpperCase()}</Chip>
+  );
+}
+
 function RunState({ events }: { events: NexusEvent[] }) {
   const last = events[events.length - 1];
   if (!last) return null;
@@ -211,7 +226,10 @@ function StageDetail({ ev }: { ev: NexusEvent }) {
     case "escalating": {
       return (
         <div className="space-y-1.5">
-          <KV label="Rule" value={<span className="text-[12.5px]">D-4 escalation rule fired — critical incident needs the frontier model.</span>} />
+          <KV label="Rule" value={<span className="text-[12.5px]">D-4 escalation rule fired — deeper analysis engaged.</span>} />
+          {ev.depth_model ? (
+            <KV label="Depth model" value={<Mono>{String(ev.depth_model)}</Mono>} />
+          ) : null}
           <KV label="This stage took" value={<Mono>{fmtMs(ev.stage_duration_ms)}</Mono>} />
         </div>
       );
@@ -221,25 +239,26 @@ function StageDetail({ ev }: { ev: NexusEvent }) {
       if (items.length === 0) {
         return <p className="text-[12.5px] text-nexus-muted">No evidence records returned.</p>;
       }
+      // Group by originating tool (B1: app/evidence.py tags every record):
+      // the operator sees FUNCTION CALLS, not an anonymous blob.
+      const byTool = new Map<string, EvidenceItem[]>();
+      for (const item of items) {
+        const t = item._tool ?? "unknown";
+        byTool.set(t, [...(byTool.get(t) ?? []), item]);
+      }
       return (
-        <div className="space-y-2.5">
-          <KV
-            label="Tools"
-            value={
-              <span className="flex flex-wrap gap-1">
-                {[...new Set(items.map((i) => i._tool).filter(Boolean))].map((t) => (
-                  <Chip key={String(t)} cls="border-nexus-blue/40 bg-nexus-blue/10 text-nexus-blue">
-                    {String(t)}
-                  </Chip>
-                ))}
-              </span>
-            }
-          />
-          <KV label="Records" value={<Mono>{items.length}</Mono>} />
-          <KV label="This stage took" value={<Mono>{fmtMs(ev.stage_duration_ms)}</Mono>} />
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[10.5px] font-semibold uppercase tracking-wide text-nexus-faint">
+              Function calls
+            </span>
+            <span className="font-mono text-[11px] text-nexus-muted">
+              {items.length} records · {fmtMs(ev.stage_duration_ms)}
+            </span>
+          </div>
           <div className="space-y-2">
-            {items.map((item, i) => (
-              <EvidenceCard key={i} item={item} index={i} />
+            {[...byTool.entries()].map(([tool, recs]) => (
+              <FunctionCallRow key={tool} tool={tool} records={recs} />
             ))}
           </div>
         </div>
@@ -288,6 +307,9 @@ function StageDetail({ ev }: { ev: NexusEvent }) {
             >
               {plan.requires_approval ? "REQUIRES HUMAN APPROVAL" : "AUTO-CLEARED"}
             </Chip>
+            {ev.model_env ? (
+              <Chip cls="border-nexus-border text-nexus-muted">{String(ev.model_env)}</Chip>
+            ) : null}
             <KV label="This stage took" value={<Mono>{fmtMs(ev.stage_duration_ms)}</Mono>} />
           </div>
           <div>
@@ -432,6 +454,53 @@ function EvidenceCard({ item, index }: { item: EvidenceItem; index: number }) {
   );
 }
 
+/* One visible function-call row: tool name, return count, and one-line
+ * preview per record — the call is never hidden behind expansion (T-7.10). */
+function FunctionCallRow({ tool, records }: { tool: string; records: EvidenceItem[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="overflow-hidden rounded-md border border-nexus-border">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 bg-nexus-raise/40 px-2.5 py-2 text-left hover:bg-nexus-raise/70"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="rounded border border-nexus-blue/40 bg-nexus-blue/10 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-nexus-blue">
+            {tool}
+          </span>
+          <span className="font-mono text-[11px] text-nexus-muted">
+            → {records.length} {records.length === 1 ? "record" : "records"}
+          </span>
+        </span>
+        <span className="shrink-0 font-mono text-[11px] text-nexus-faint">
+          {open ? "hide" : "show records"}
+        </span>
+      </button>
+      {!open && records.length > 0 && (
+        <p className="truncate border-t border-nexus-border px-2.5 py-1.5 text-[11.5px] text-nexus-muted">
+          {preview(records[0])}
+        </p>
+      )}
+      {open && (
+        <div className="space-y-1.5 border-t border-nexus-border p-2.5">
+          {records.map((item, i) => (
+            <EvidenceCard key={i} item={item} index={i} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function preview(item: EvidenceItem): string {
+  const parts: string[] = [];
+  for (const k of ["timestamp", "level", "message", "summary"]) {
+    const v = item[k];
+    if (v !== undefined && v !== null) parts.push(String(v));
+  }
+  return parts.join(" · ") || JSON.stringify(item).slice(0, 200);
+}
+
 /* ------------------------------------------------------------------ */
 /* Timeline card                                                       */
 /* ------------------------------------------------------------------ */
@@ -447,14 +516,29 @@ export default function Timeline({
 }) {
   const [openSeq, setOpenSeq] = useState<number | null>(null);
 
+  const ingest = events.find((e) => e.type === "ingest");
+  const classified = events.find((e) => e.type === "classified");
+  const severity = classified?.severity as string | undefined;
+
   return (
     <section className="overflow-hidden rounded-lg border border-nexus-border bg-nexus-panel shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
       <header className="flex items-center justify-between gap-3 border-b border-nexus-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="truncate font-mono text-[13px] font-semibold text-nexus-text">
-            {incidentId}
-          </span>
-          <RunState events={events} />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="truncate font-mono text-[13px] font-semibold text-nexus-text">
+              {incidentId}
+            </span>
+            {severity && <SevChip severity={severity} />}
+            <RunState events={events} />
+          </div>
+          {ingest && (
+            <p className="truncate text-[11.5px] text-nexus-muted">
+              <span className="font-mono text-[11px] text-nexus-faint">
+                {String(ingest.service ?? "")}
+              </span>
+              {ingest.message ? ` — ${String(ingest.message)}` : ""}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-3 text-[11px] text-nexus-muted">
           <span>
@@ -557,16 +641,22 @@ function Summary({ ev }: { ev: NexusEvent }) {
     case "escalating":
       return (
         <p className="mt-0.5 truncate text-[12px] text-nexus-muted">
-          frontier model engaged {typeof ev.stage_duration_ms === "number" ? `· ${fmtMs(ev.stage_duration_ms)}` : ""}
+          {ev.depth_model ? `${String(ev.depth_model)}` : "depth model"} engaged
+          {typeof ev.stage_duration_ms === "number" ? ` · ${fmtMs(ev.stage_duration_ms)}` : ""}
         </p>
       );
     case "tool_call": {
       const items = (ev.evidence as EvidenceItem[] | undefined) ?? [];
-      const tools = [...new Set(items.map((i) => i._tool).filter(Boolean))];
+      const byTool = new Map<string, number>();
+      for (const i of items) {
+        const t = String(i._tool ?? "unknown");
+        byTool.set(t, (byTool.get(t) ?? 0) + 1);
+      }
+      const perTool = [...byTool.entries()].map(([t, n]) => `${t}→${n}`).join(" ");
       return (
         <p className="mt-0.5 truncate text-[12px] text-nexus-muted">
           {items.length} {items.length === 1 ? "record" : "records"}
-          {tools.length ? ` · ${tools.join(", ")}` : ""}
+          {perTool ? ` · ${perTool}` : ""}
           {" · "}
           {fmtMs(ev.stage_duration_ms)}
         </p>
@@ -580,6 +670,7 @@ function Summary({ ev }: { ev: NexusEvent }) {
           {plan.root_cause_hypothesis ?? "?"} · confidence {String(plan.confidence ?? "?")} ·{" "}
           {(plan.remediation_steps ?? []).length} steps
           {plan.requires_approval ? " · approval" : ""}
+          {ev.model_env ? ` · ${String(ev.model_env)}` : ""}
           {" · "}
           {fmtMs(ev.stage_duration_ms)}
         </p>

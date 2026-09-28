@@ -130,6 +130,7 @@ Set the model provider in `.env` (copy from `.env.example`):
 | `NEXUSOPS_LLM_API_URL` | Any OpenAI-compatible base URL | `https://openrouter.ai/api/v1` |
 | `NEXUSOPS_SLM_MODEL` | Small/cheap/fast classifier | `openrouter/auto` |
 | `NEXUSOPS_FRONTIER_MODEL` | Heavy lifting (RCA, judge) | `anthropic/claude-sonnet-4` |
+| `NEXUSOPS_RCA_MODEL` | Root-cause stage model: `frontier` (D-4: deep-dives escalated incidents) or `slm` (whole pipeline on the SLM — cheaper, faster, no free-tier frontier 503s; shallower root-cause prose, operator-chosen) | `frontier` |
 | `NEXUSOPS_REDIS_URL` | Redis connection | `redis://localhost:6379/0` |
 
 `.env` is gitignored and loaded automatically (stdlib, no extra dependency).
@@ -240,11 +241,17 @@ One process IS the live system — webhook, pipeline worker, WebSocket stream,
 human gate, real scoped rollback, and the frontend:
 
 ```bash
-# Rehearsal mode — deterministic fakes, ZERO model quota, seconds
+# Rehearsal mode — deterministic fakes, ZERO model quota; stages are paced
+# (~0.5 s classify / ~0.9 s evidence / ~1.4 s plan) so you can watch an
+# incident run step-by-step. NEXUSOPS_SMOKE_PACE=0 restores instant mode.
 .venv/bin/python -m scripts.run_console --smoke            # serves on :8137
 
-# Real mode — live Gemini calls when .env carries the key (D-9), default
+# Real mode — live Gemini calls when .env carries the key (D-9), default;
+# transient provider hiccups (free-tier "high demand" 503s) are retried
+# once before any honest degrade
 .venv/bin/python -m scripts.run_console --port 8137
+# --slm-rca     run EVERYTHING (incl. the root-cause plan) on the SLM —
+#               faster, cheaper, no frontier 503s; shallower root-cause prose
 # --keep-redis  do NOT flush the queue + seen-set at startup (console sandbox)
 ```
 
@@ -254,15 +261,23 @@ operator's tool, not a terminal):
 1. **Live tab** — pick a fixture ("fire live") or POST any valid alert to
    `/webhook/incident`. The pipeline streams every stage: classified →
    escalating → evidence → plan → **GATE OPEN**, each with its real duration
-   (ms), and the header shows **SMOKE/REAL** so you always know whose arithmetic
-   you're watching.
+   (ms), and the header shows **SMOKE/REAL** plus the active **RCA model** so
+   you always know whose arithmetic you're watching. A **pipeline stepper**
+   (Ingest → Classify → Evidence → Plan → Gate → Resolve) pulses the live stage
+   with elapsed-now ticking (client-observed wall clock — an observation, never
+   a fabricated model delay); if a run aborts, the failing step goes `!` and the
+   steps after it are dashed — a gate that never opened is never shown as done.
 2. **Click any stage** to open its full detail: evidence cards with their origin
-   tool (`fetch_service_logs` / `query_prometheus_metrics`), the RCA plan with
-   confidence + steps, the model that ran per stage, raw JSON — everything the
-   event actually carried. No fabricated numbers: `stage_duration_ms` is the
-   measured time between pipeline steps, and post-gate stages restart their
-   clock at your decision so "rollback" never claims the minutes you spent
-   thinking.
+   tool (`fetch_service_logs` / `query_prometheus_metrics` — now also rendered
+   as one visible function-call row per tool with its record count), the RCA
+   plan with confidence + steps, the model that ran per stage, raw JSON —
+   everything the event actually carried. Below the gate, the **Incident
+   record** consolidates the whole run — alert payload, classification,
+   evidence-by-tool, plan, gate wait/decision/actor, rollback tag, terminal
+   state + resolve total, and a raw-JSON toggle. No fabricated numbers:
+   `stage_duration_ms` is the measured time between pipeline steps, and
+   post-gate stages restart their clock at your decision so "rollback" never
+   claims the minutes you spent thinking.
 3. **The gate is a human (NG-1).** The pipeline parks; you click **Approve
    rollback** (real scoped GitHub tag rollback when `NEXUSOPS_GITHUB_REPO`/
    `TOKEN` are set, D-10) or **Reject** (nothing fires). The instant you click,
@@ -285,7 +300,7 @@ blocked queue never reads as a dead machine).
 
 ```bash
 .venv/bin/python -m pytest tests/
-# → 90 passed
+# → 96 passed
 ```
 
 ---

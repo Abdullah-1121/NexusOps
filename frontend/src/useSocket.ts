@@ -28,7 +28,10 @@ export function useNexusSocket() {
       ws.onmessage = (msg) => {
         try {
           const ev = JSON.parse(msg.data) as NexusEvent;
-          setEvents((prev) => [...prev, ev]);
+          // `_arrived_ms`: client-side observation wall-clock (not a server
+          // stamp) — the console uses it only for its LIVE elapsed tickers, so
+          // "awaiting operator for 42s" reflects what the operator actually saw.
+          setEvents((prev) => [...prev, { ...ev, _arrived_ms: Date.now() }]);
         } catch {
           // a malformed frame is the server's bug; keep the socket alive
         }

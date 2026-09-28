@@ -35,6 +35,16 @@ export default function StatusStrip({ status }: { status: SystemStatus | null })
             {status ? status.gates_waiting.length : "…"}
           </span>
         </div>
+        <div className="flex items-center justify-between px-3.5 py-2">
+          <span className="text-nexus-muted">Plan model (RCA)</span>
+          <span
+            className={`font-mono text-[12px] font-semibold ${
+              status?.rca_model ? "text-nexus-text" : "text-nexus-faint"
+            }`}
+          >
+            {status?.rca_model ?? "…"}
+          </span>
+        </div>
       </div>
     </section>
   );

@@ -17,6 +17,8 @@ export interface SystemStatus {
   gates_waiting: string[];
   /** runtime label: "smoke" = deterministic fakes, "real" = live model quota (B1) */
   mode?: string;
+  /** model that writes remediation plans (T-7.11) — "slm" or "frontier" family */
+  rca_model?: string;
 }
 
 export interface RemediationStep {
@@ -39,6 +41,9 @@ export interface NexusEvent {
   incident_id: string;
   seq: number;
   [key: string]: unknown;
+  /** client-observed arrival wall-clock (added by useSocket, never a server
+   *  stamp) — feeds the live elapsed tickers in the progress stepper */
+  _arrived_ms?: number;
 }
 
 /** One record returned by an evidence tool (D-12/B1: `app/evidence.py` tags

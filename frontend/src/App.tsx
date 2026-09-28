@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import GatePanel from "./components/GatePanel";
 import IncidentPicker from "./components/IncidentPicker";
+import IncidentRecord from "./components/IncidentRecord";
+import PipelineProgress from "./components/PipelineProgress";
 import StatusStrip from "./components/StatusStrip";
 import Timeline from "./components/Timeline";
 import { useNexusSocket } from "./useSocket";
@@ -184,14 +186,16 @@ export default function App() {
           </aside>
           <main className="min-h-0 overflow-y-auto">
             {active ? (
-              <>
+              <div className="space-y-4">
+                <PipelineProgress events={activeEvents} />
                 <Timeline incidentId={active} events={activeEvents} queued={queued} />
                 <GatePanel
                   incidentId={active}
                   events={activeEvents}
                   decide={decide}
                 />
-              </>
+                <IncidentRecord events={activeEvents} />
+              </div>
             ) : (
               <div className="grid h-full place-items-center">
                 <div className="max-w-sm text-center">

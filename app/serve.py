@@ -146,6 +146,15 @@ class LiveDriver:
         self._t_chunk: float | None = None
         self._slm = os.environ.get("NEXUSOPS_SLM_MODEL") or "slm"
         self._ff = os.environ.get("NEXUSOPS_FRONTIER_MODEL") or "frontier"
+        # T-7.11 (2026-09-28): the RCA stage's model is operator-chosen.
+        # Default honors D-4 (frontier deep-dives escalated incidents); setting
+        # NEXUSOPS_RCA_MODEL=slm runs the whole pipeline on the SLM — faster,
+        # cheaper, no free-tier frontier 503 flapping, at the cost of shallower
+        # root-cause prose. Both sides (the graph AND the stamp, below) read the
+        # same env, so the plan event always names the model that actually wrote
+        # the plan — same provenance contract as classify (B1).
+        self._rca_slm = (os.environ.get("NEXUSOPS_RCA_MODEL") or "frontier") == "slm"
+        self._rca_label = self._slm if self._rca_slm else self._ff
 
     async def run_once(self, alert: dict) -> dict:
         iid = alert["incident_id"]
@@ -226,7 +235,8 @@ class LiveDriver:
                         model_env=self._slm, **stamp,
                     )
             elif node == "escalate":
-                self.bus.publish(incident_id, "escalating", **stamp)
+                self.bus.publish(incident_id, "escalating",
+                                 depth_model=self._rca_label, **stamp)
             elif node == "evidence":
                 self.bus.publish(incident_id, "tool_call", evidence=update.get("evidence"), **stamp)
             elif node == "rca":
@@ -239,7 +249,7 @@ class LiveDriver:
                         incident_id, "plan",
                         plan=update["plan"],
                         requires_approval=bool(update["plan"].get("requires_approval")),
-                        model_env=self._ff, **stamp,
+                        model_env=self._rca_label, **stamp,
                     )
             elif node == "rollback":
                 self.bus.publish(incident_id, "rollback",
@@ -435,6 +445,7 @@ def create_serve_app(
             "queue_depth": depth,
             "gates_waiting": awaiter.pending(),
             "mode": driver.mode,
+            "rca_model": driver._rca_label,
         }
 
     @app.websocket("/ws")

@@ -405,6 +405,44 @@ def test_retry_model_never_hides_hard_errors():
     assert calls["n"] == 1  # never retried a hard error
 
 
+def test_real_console_graph_retries_transient_then_succeeds():
+    """Serve real-mode wiring (2026-09-28): the console's real graph must retry
+    transient provider failures — Gemini free-tier 'high demand' 503s are
+    intermittent — or a single hiccup silently degrades a whole live incident
+    to manual_review. Confined to scripts.run_console; benchmark harness and
+    tests keep their own wiring."""
+    from app.models import ModelError, CONFIDENCE_SCHEMA
+    from scripts.run_console import _real_make_graph
+
+    calls = {"n": 0}
+
+    async def flaky(messages, model_env, schema):
+        calls["n"] += 1
+        if calls["n"] <= 2:  # first two physical attempts: transient 503
+            raise ModelError("503 high demand", status_code=503, retryable=True)
+        if "root_cause_hypothesis" in (schema.get("required") or []):
+            return {"severity": "critical", "affected_service": "db",
+                    "root_cause_hypothesis": "stub", "confidence": 0.8,
+                    "remediation_steps": [{"action": "rollback", "target": "db@v1",
+                                           "reason": "stub evidence"}],
+                    "requires_approval": True, "evidence": ["stub"]}
+        assert schema == CONFIDENCE_SCHEMA
+        return {"severity": "critical", "affected_service": "db",
+                "triage_confidence": 0.9, "ambiguous": False}
+
+    async def stub_gather(alert):
+        return [{"tool": "stub", "summary": "ok"}]
+
+    # a reject-deciding fixture never exercises rollback, so no GitHub coupling
+    f = next(x for x in bench.build_fixtures()
+             if x.delivered and x.ground.get("expected_decision") == "reject")
+    graph = _real_make_graph(model_fn=flaky, gather=stub_gather, retries=3, base_sleep=0.01)()
+    res = asyncio.run(bench.drive_incident(graph, f.alert, lambda g: g["expected_decision"], f))
+    assert calls["n"] == 4  # classify: 2 failures + rerun; rca: 1 (first-try success)
+    assert res.terminal == "rejected"
+    assert res.manual_review_reason is None
+
+
 # --- determinism (NFR-5) -----------------------------------------------------
 
 
@@ -430,6 +468,50 @@ def test_smoke_judge_contract():
         assert set(metric) == {"verdict", "score", "reason"}
         assert isinstance(metric["verdict"], bool)
     assert all(m["verdict"] for m in out.values())
+
+
+def test_paced_stage_awaits_its_pace_then_delegates_losslessly():
+    # Console rehearsal pacing (2026-09-28): `paced_stage` is what makes a live
+    # smoke fire watchable. It must REALLY sleep before delegating (that sleep
+    # is the visible stage gap) and delegation must be lossless.
+    import time
+
+    calls = []
+
+    async def target(x):
+        calls.append(x)
+        return x * 2
+
+    wrapped = bench.paced_stage(0.05)(target)
+    assert asyncio.iscoroutinefunction(wrapped) is True
+    t0 = time.monotonic()
+    out = asyncio.run(wrapped(21))
+    elapsed = time.monotonic() - t0
+    assert out == 42
+    assert calls == [21]
+    assert elapsed >= 0.04  # genuinely waited — not a no-op decoration
+
+
+def test_paced_stage_zero_pace_is_instant():
+    # NEXUSOPS_SMOKE_PACE=0 is the documented opt-out: same behavior contract,
+    # no artificial wait.
+    import time
+
+    async def noop():
+        return True
+
+    wrapped = bench.paced_stage(0.2, pace=0.0)(noop)
+    t0 = time.monotonic()
+    asyncio.run(wrapped())
+    assert time.monotonic() - t0 < 0.05
+
+
+def test_benchmark_smoke_fakes_are_not_paced():
+    # Only the console opts into pacing; the benchmark's own fakes must stay
+    # instant (deterministic harness, silent-fast tests). If someone later wires
+    # pacing into the harness core, this fails loudly.
+    assert bench.smoke_classify.__name__ == "smoke_classify"
+    assert bench.paced_stage(0.1)(bench.smoke_classify).__name__ == "paced_fn"
 
 
 def test_checkpoint_round_trips_without_losing_fields(tmp_path):

@@ -141,6 +141,46 @@ def test_driver_full_approve_cycle_events_and_rollback_once():
     }
 
 
+def test_rca_operator_slm_forces_stamp_and_status(monkeypatch):
+    """T-7.11 (2026-09-28): NEXUSOPS_RCA_MODEL=slm must be honored by BOTH
+    sides that read it — the consuming graph node (state_machine) and the
+    honest stamp (serve._inspect). The plan + escalating events must name the
+    SLM, never the frontier, and /api/status must report the active choice.
+    One env, both sides: the plan row can never name a model that didn't write
+    the plan (same provenance contract as classify, B1)."""
+    monkeypatch.setenv("NEXUSOPS_SLM_MODEL", "slm-probe")
+    monkeypatch.setenv("NEXUSOPS_FRONTIER_MODEL", "ff-probe")
+    monkeypatch.setenv("NEXUSOPS_RCA_MODEL", "slm")
+
+    async def main():
+        bus = EventBus()
+        awaiter = GateAwaiter()
+        driver = LiveDriver(bus, awaiter, make_graph=_smoke_graph([]))
+        reader = bus.subscribe()
+        fixture = _fixture("approve")  # severity_hint critical -> escalates
+        iid = fixture.alert["incident_id"]
+        task = asyncio.create_task(driver.run_once(fixture.alert))
+        try:
+            evs = await _drain_until(reader, "gate_open")
+            awaiter.wait(iid)
+            assert awaiter.resolve(iid, {"decision": "approve", "actor": "ops"}) is True
+            evs += await _drain_until(reader, "done")
+            await asyncio.wait_for(task, timeout=5.0)
+            return evs
+        finally:
+            task.cancel()
+
+    events = asyncio.run(main())
+    plan = next(e for e in events if e["type"] == "plan")
+    escalating = next(e for e in events if e["type"] == "escalating")
+    assert plan["model_env"] == "slm-probe", "plan must be stamped SLM under --slm-rca"
+    assert escalating["depth_model"] == "slm-probe", "depth model must reflect the override"
+
+    # /api/status reports the choice the operator actually made.
+    with TestClient(create_serve_app(run_worker=False)) as client:
+        assert client.get("/api/status").json()["rca_model"] == "slm-probe"
+
+
 def test_driver_rerun_of_same_incident_parks_fresh_no_stale_decision():
     """Postmortem 2026-09-23: a forced re-run of the same incident_id used to
     `await` the PREVIOUS run's already-done gate future, silently resuming with
@@ -356,6 +396,9 @@ def test_serve_status_reports_redis_and_queue():
     assert status["redis"] == "ok"
     assert status["queue_depth"] == 0
     assert status["gates_waiting"] == []
+    # T-7.11: the operator must see which model writes plans. Default is the
+    # frontier (D-4); the slm override is covered by the driver-level test.
+    assert status["rca_model"] == (os.environ.get("NEXUSOPS_FRONTIER_MODEL") or "frontier")
 
 
 def test_serve_webhook_publishes_ingest_and_duplicate_is_quiet():
