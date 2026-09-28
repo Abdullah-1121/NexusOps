@@ -248,23 +248,38 @@ human gate, real scoped rollback, and the frontend:
 # --keep-redis  do NOT flush the queue + seen-set at startup (console sandbox)
 ```
 
-Then open **http://localhost:8137**:
+Then open **http://localhost:8137** (professional light UI — the console is an
+operator's tool, not a terminal):
 
 1. **Live tab** — pick a fixture ("fire live") or POST any valid alert to
    `/webhook/incident`. The pipeline streams every stage: classified →
-   escalating → evidence → plan → **GATE OPEN**.
-2. **The gate is a human (NG-1).** The pipeline parks; you click **Approve
+   escalating → evidence → plan → **GATE OPEN**, each with its real duration
+   (ms), and the header shows **SMOKE/REAL** so you always know whose arithmetic
+   you're watching.
+2. **Click any stage** to open its full detail: evidence cards with their origin
+   tool (`fetch_service_logs` / `query_prometheus_metrics`), the RCA plan with
+   confidence + steps, the model that ran per stage, raw JSON — everything the
+   event actually carried. No fabricated numbers: `stage_duration_ms` is the
+   measured time between pipeline steps, and post-gate stages restart their
+   clock at your decision so "rollback" never claims the minutes you spent
+   thinking.
+3. **The gate is a human (NG-1).** The pipeline parks; you click **Approve
    rollback** (real scoped GitHub tag rollback when `NEXUSOPS_GITHUB_REPO`/
-   `TOKEN` are set, D-10) or **Reject** (nothing fires). A second decision on
-   the same gate is refused (`already_decided`, first wins). Re-firing the same
-   fixture opens a **fresh** gate — each run needs its own human decision.
-3. **History tab** — the feature-6 film (offline replay of a recorded run,
+   `TOKEN` are set, D-10) or **Reject** (nothing fires). The instant you click,
+   the gate answers: "Decision recorded — approve/reject (EXECUTING/CLOSING)",
+   then streams the tail live. A second decision on the same gate is refused
+   (`already_decided`, first wins). Re-firing the same fixture opens a
+   **fresh** gate — each run needs its own human decision.
+4. **History tab** — the feature-6 film (offline replay of a recorded run,
    honest `manual_review` included) mounted at `/film`.
 
 Console-only rehearsal details: the picker fires with `?force=1` (bypasses the
 dedupe seen-set so you can re-run a fixture; plain webhook POSTs stay dedupe-
 by-default). Incidents run one at a time (a parked gate blocks later work by
-design).
+design) — and the console says so: firing while a gate is parked shows
+`queued <id> — <gate> parked at the gate; decide it first` in amber, and the
+queued run carries a `QUEUED behind <gate>` banner until its run starts (so a
+blocked queue never reads as a dead machine).
 
 ### Tests
 

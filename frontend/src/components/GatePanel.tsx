@@ -4,7 +4,13 @@ import type { NexusEvent, Plan, RemediationStep } from "../types";
 /** The mandatory human gate (NG-1). Rendered while the pipeline is parked at
  *  `gate_open` with nothing decided yet: the plan in full, and two buttons.
  *  Approving fires the agent's rollback for real (D-10, env-scoped to the
- *  throwaway repo); rejecting ends the cycle cleanly — no tool ever runs. */
+ *  throwaway repo); rejecting ends the cycle cleanly — no tool ever runs.
+ *
+ *  Batch C (2026-09-28): the decision must FEEL live. The instant a button is
+ *  clicked we render an optimistic "decision recorded" confirmation — the
+ *  operator never stares at a dead button while the pipeline resumes. The card
+ *  stays mounted (confirming every decision was received) until a terminal
+ *  state arrives; only then does it give way to the timeline's terminal row. */
 export default function GatePanel({
   incidentId,
   events,
@@ -14,85 +20,159 @@ export default function GatePanel({
   events: NexusEvent[];
   decide: (id: string, d: "approve" | "reject") => void;
 }) {
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState<"approve" | "reject" | null>(null);
   const last = events[events.length - 1];
   const open = last?.type === "gate_open";
   const gate = events.find((e) => e.type === "gate_open");
   const plan = (gate?.plan as Plan | undefined) ?? null;
 
-  // A decision/rollback/done arriving closes the gate — reset local lock.
+  // Optimistic sent-marker folds in the durable `decision` event: even if this
+  // component unmounted between click and stream, the decision row proves it
+  // landed — the confirmation is never re-fabricated from local state alone.
+  const decided = last?.type === "decision" ? String(last.decision) : submitting;
+
+  // A terminal arriving closes the gate — reset local lock.
   useEffect(() => {
-    if (last && ["decision", "rollback", "done", "error", "manual_review"].includes(last.type)) {
-      setSubmitting(false);
+    if (last && ["done", "error", "manual_review"].includes(last.type)) {
+      setSubmitting(null);
     }
   }, [last]);
 
-  if (!open || !gate) return null;
+  if (!gate) return null;
 
   const steps: RemediationStep[] = plan?.remediation_steps ?? [];
+  const conf =
+    typeof plan?.confidence === "number" ? Math.round(plan.confidence * 100) : null;
+
+  const onDecide = (d: "approve" | "reject") => {
+    setSubmitting(d);
+    decide(incidentId, d);
+  };
+
+  /* After the click and through the pipeline tail, show the confirmation —
+   * the machine heard the human, and the run is finishing. */
+  if (decided && !open) {
+    const approve = decided === "approve";
+    return (
+      <section className="mt-4 overflow-hidden rounded-lg border border-nexus-border bg-nexus-panel shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+        <div className="flex items-center gap-3 px-4 py-3">
+          {approve ? (
+            <span className="h-2 w-2 animate-pulse rounded-full bg-nexus-green" />
+          ) : (
+            <span className="h-2 w-2 rounded-full bg-nexus-amber" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold text-nexus-text">
+              Decision recorded — {approve ? "approve" : "reject"}
+            </p>
+            <p className="mt-0.5 text-[12px] text-nexus-muted">
+              {approve
+                ? "Approved. The scoped rollback is executing — watch the rollback stage stream in."
+                : "Rejected. No action was taken and no tool ran — this incident is closing."}
+            </p>
+          </div>
+          <span
+            className={`shrink-0 rounded border px-2 py-0.5 text-[10px] font-bold tracking-wide ${
+              approve
+                ? "border-nexus-green/40 bg-nexus-green/10 text-nexus-green"
+                : "border-nexus-amber/40 bg-nexus-amber/10 text-nexus-amber"
+            }`}
+          >
+            {approve ? "EXECUTING" : "CLOSING"}
+          </span>
+        </div>
+      </section>
+    );
+  }
+
+  if (!open) return null;
 
   return (
-    <section className="mt-4 rounded-lg border border-nexus-amber/60 bg-nexus-panel">
-      <header className="flex items-center justify-between border-b border-nexus-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-nexus-amber" />
-          <h2 className="text-sm font-medium text-nexus-text">
-            Waiting for your decision — {incidentId}
+    <section className="mt-4 overflow-hidden rounded-lg border border-nexus-amber/40 bg-nexus-panel shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+      <header className="flex items-center justify-between gap-3 border-b border-nexus-border px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-nexus-amber" />
+          <h2 className="text-[13px] font-semibold text-nexus-text">
+            Action required — {incidentId}
           </h2>
         </div>
-        <span className="rounded border border-nexus-amber/50 px-2 py-0.5 text-[10px] font-semibold text-nexus-amber">
+        <span className="rounded border border-nexus-amber/40 bg-nexus-amber/10 px-2 py-0.5 text-[10px] font-bold tracking-wide text-nexus-amber">
           GATE OPEN
         </span>
       </header>
 
-      <div className="grid gap-4 p-4 md:grid-cols-2">
+      <div className="grid gap-5 p-4 md:grid-cols-2">
         <div>
-          <h3 className="mb-1 text-[11px] uppercase tracking-widest text-nexus-muted">
+          <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-nexus-faint">
             Root-cause hypothesis
           </h3>
-          <p className="text-sm text-nexus-text">
+          <p className="text-[13.5px] font-medium leading-snug text-nexus-text">
             {plan?.root_cause_hypothesis ?? "(none offered)"}
           </p>
-          <div className="mt-3 flex gap-4 text-xs">
-            <div>
-              <span className="text-nexus-muted">Confidence</span>
-              <div className="font-mono text-nexus-text">
-                {plan?.confidence != null ? `${Math.round(plan.confidence * 100)}%` : "?"}
+          <div className="mt-3 space-y-1">
+            <div className="flex items-baseline justify-between gap-3 text-[11px]">
+              <span className="font-medium uppercase tracking-wide text-nexus-faint">
+                Confidence
+              </span>
+              <span className="font-mono text-[12px] font-semibold text-nexus-text">
+                {conf != null ? `${conf}%` : "?"}
+              </span>
+            </div>
+            {conf != null && (
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-nexus-raise">
+                <div
+                  className="h-full rounded-full bg-nexus-accent"
+                  style={{ width: `${conf}%` }}
+                />
               </div>
+            )}
+            <div className="flex items-baseline justify-between gap-3 pt-1 text-[11px]">
+              <span className="font-medium uppercase tracking-wide text-nexus-faint">
+                Severity
+              </span>
+              <span className="font-mono text-[12px] text-nexus-text">
+                {plan?.severity ?? "?"}
+              </span>
             </div>
-            <div>
-              <span className="text-nexus-muted">Severity</span>
-              <div className="font-mono text-nexus-text">{plan?.severity ?? "?"}</div>
-            </div>
-            <div>
-              <span className="text-nexus-muted">Service</span>
-              <div className="font-mono text-nexus-text">{plan?.affected_service ?? "?"}</div>
+            <div className="flex items-baseline justify-between gap-3 text-[11px]">
+              <span className="font-medium uppercase tracking-wide text-nexus-faint">
+                Service
+              </span>
+              <span className="font-mono text-[12px] text-nexus-text">
+                {plan?.affected_service ?? "?"}
+              </span>
             </div>
           </div>
         </div>
 
         <div>
-          <h3 className="mb-1 text-[11px] uppercase tracking-widest text-nexus-muted">
-            Remediation plan
+          <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-nexus-faint">
+            Remediation plan ({steps.length})
           </h3>
           {steps.length === 0 ? (
-            <p className="text-xs text-nexus-muted">No steps offered.</p>
+            <p className="text-[12.5px] text-nexus-muted">No steps offered.</p>
           ) : (
-            <ul className="space-y-1.5">
+            <ul className="space-y-2">
               {steps.map((s, i) => (
-                <li key={i} className="flex items-start gap-2 text-xs">
+                <li key={i} className="flex items-start gap-2.5">
                   <span
-                    className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                    className={`rounded border px-1.5 py-0.5 font-mono text-[10.5px] font-semibold ${
                       s.action === "rollback"
-                        ? "border-nexus-red/60 text-nexus-red"
-                        : "border-nexus-blue/50 text-nexus-blue"
+                        ? "border-nexus-red/40 bg-nexus-red/10 text-nexus-red"
+                        : "border-nexus-blue/40 bg-nexus-blue/10 text-nexus-blue"
                     }`}
                   >
                     {s.action}
                   </span>
-                  <span className="min-w-0 text-nexus-text">
-                    {s.target && <code className="font-mono text-nexus-muted">{s.target}</code>}
-                    {s.reason && <span className="block truncate text-nexus-muted">{s.reason}</span>}
+                  <span className="min-w-0 text-[12.5px] leading-snug text-nexus-text">
+                    {s.target && (
+                      <code className="font-mono text-[11.5px] text-nexus-muted">
+                        {s.target}
+                      </code>
+                    )}
+                    {s.reason && (
+                      <span className="block text-nexus-muted">{s.reason}</span>
+                    )}
                   </span>
                 </li>
               ))}
@@ -101,31 +181,25 @@ export default function GatePanel({
         </div>
       </div>
 
-      <footer className="flex items-center justify-between gap-3 border-t border-nexus-border px-4 py-3">
-        <p className="text-[11px] text-nexus-muted">
-          Approving executes the scoped GitHub rollback for real (throwaway repo).
-          Rejecting ends this incident — nothing fires.
+      <footer className="flex flex-col gap-2.5 border-t border-nexus-border bg-nexus-raise/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-[11.5px] leading-snug text-nexus-muted">
+          Approving executes the scoped rollback for real — nothing is faked.
+          Rejecting ends this incident: <span className="font-medium text-nexus-text">no action is taken.</span>
         </p>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <button
-            onClick={() => {
-              setSubmitting(true);
-              decide(incidentId, "reject");
-            }}
-            disabled={submitting}
-            className="rounded-md border border-nexus-border px-4 py-2 text-xs font-medium text-nexus-text transition-colors hover:bg-nexus-raise disabled:opacity-50"
+            onClick={() => onDecide("reject")}
+            disabled={submitting !== null}
+            className="rounded-md border border-nexus-border bg-nexus-panel px-4 py-1.5 text-[12px] font-semibold text-nexus-text transition-colors hover:border-nexus-red/50 hover:text-nexus-red disabled:opacity-50"
           >
             Reject
           </button>
           <button
-            onClick={() => {
-              setSubmitting(true);
-              decide(incidentId, "approve");
-            }}
-            disabled={submitting}
-            className="rounded-md bg-nexus-red px-4 py-2 text-xs font-semibold text-nexus-bg transition-colors hover:brightness-110 disabled:opacity-50"
+            onClick={() => onDecide("approve")}
+            disabled={submitting !== null}
+            className="rounded-md bg-nexus-red px-4 py-1.5 text-[12px] font-semibold text-white transition-colors hover:brightness-110 disabled:opacity-50"
           >
-            {submitting ? "Executing…" : "Approve rollback"}
+            {submitting === "approve" ? "Executing…" : "Approve & rollback"}
           </button>
         </div>
       </footer>

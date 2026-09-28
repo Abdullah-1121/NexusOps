@@ -131,10 +131,21 @@ class LiveDriver:
     resolves the awaiter.
     """
 
-    def __init__(self, bus: EventBus, awaiter: GateAwaiter, make_graph: Callable = build_graph):
+    def __init__(self, bus: EventBus, awaiter: GateAwaiter, make_graph: Callable = build_graph,
+                 mode: str | None = None):
         self.bus = bus
         self.awaiter = awaiter
         self.make_graph = make_graph
+        # B1 (2026-09-28): honest provenance on every milestone. `mode` names
+        # the runtime (smoke fakes vs real Gemini quota) — surfaced in the
+        # operator header and per-event; `_t_chunk` is the wall-clock of the
+        # previous chunk arrival, so each event carries the driver-observed
+        # duration of the stage that produced it (never fabricated — it is the
+        # actual elapsed time between astream chunks).
+        self.mode = mode or os.environ.get("NEXUSOPS_MODE", "real")
+        self._t_chunk: float | None = None
+        self._slm = os.environ.get("NEXUSOPS_SLM_MODEL") or "slm"
+        self._ff = os.environ.get("NEXUSOPS_FRONTIER_MODEL") or "frontier"
 
     async def run_once(self, alert: dict) -> dict:
         iid = alert["incident_id"]
@@ -146,6 +157,7 @@ class LiveDriver:
         graph = self.make_graph()
         cfg = {"configurable": {"thread_id": iid}}
         t0 = time.monotonic()
+        self._t_chunk = t0  # first stage's duration counts from run start (B1)
         parked = False
         with get_tracer().start_as_current_span(
             "nexusops.incident", attributes={"app.incident.id": iid}
@@ -156,6 +168,10 @@ class LiveDriver:
                 parked |= self._inspect(iid, chunk)
             if parked:
                 body = await self.awaiter.wait(iid)  # human §5.4 click lands here
+                # B1 timing honesty: do NOT let the rollback stage inherit the
+                # operator's decision wait — restart the stage clock at resume
+                # so post-gate durations are measured from the human's answer.
+                self._t_chunk = time.monotonic()
                 async for chunk in graph.astream(Command(resume=body), cfg, stream_mode="updates"):
                     self._inspect(iid, chunk)
             final = graph.get_state(cfg).values
@@ -173,12 +189,24 @@ class LiveDriver:
         """Map one astream chunk onto bus events. Returns True for the interrupt
         (signals the driver to park and await the human)."""
         parked = False
+        # B1: the stage's real wall-clock, observed by the driver — elapsed
+        # since the previous chunk arrived. Honest by construction: it is not
+        # a fake "model took X ms" claim, it is the measured step boundary.
+        now = time.monotonic()
+        dur = (now - self._t_chunk) * 1000.0 if self._t_chunk is not None else None
+        self._t_chunk = now
+        stamp = (
+            {"stage_duration_ms": round(dur, 1), "mode": self.mode}
+            if dur is not None
+            else {"mode": self.mode}
+        )
         for node, update in chunk.items():
             if node == "__interrupt__":
                 parked = True
                 value = update[0].value if update else {}
                 self.bus.publish(
-                    incident_id, "gate_open", plan=value.get("plan"), waiting=True
+                    incident_id, "gate_open",
+                    plan=value.get("plan"), waiting=True, **stamp,
                 )
                 continue
             if not isinstance(update, dict):
@@ -186,7 +214,8 @@ class LiveDriver:
             if node == "classify":
                 if "manual_review_reason" in update:
                     self.bus.publish(incident_id, "manual_review",
-                                     reason=update["manual_review_reason"], stage="classify")
+                                     reason=update["manual_review_reason"], stage="classify",
+                                     **stamp)
                 else:
                     self.bus.publish(
                         incident_id, "classified",
@@ -194,24 +223,27 @@ class LiveDriver:
                         affected_service=update.get("affected_service"),
                         triage_confidence=update.get("triage_confidence"),
                         ambiguous=update.get("ambiguous"),
+                        model_env=self._slm, **stamp,
                     )
             elif node == "escalate":
-                self.bus.publish(incident_id, "escalating")
+                self.bus.publish(incident_id, "escalating", **stamp)
             elif node == "evidence":
-                self.bus.publish(incident_id, "tool_call", evidence=update.get("evidence"))
+                self.bus.publish(incident_id, "tool_call", evidence=update.get("evidence"), **stamp)
             elif node == "rca":
                 if "manual_review_reason" in update:
                     self.bus.publish(incident_id, "manual_review",
-                                     reason=update["manual_review_reason"], stage="rca")
+                                     reason=update["manual_review_reason"], stage="rca",
+                                     **stamp)
                 elif update.get("plan"):
                     self.bus.publish(
                         incident_id, "plan",
                         plan=update["plan"],
                         requires_approval=bool(update["plan"].get("requires_approval")),
+                        model_env=self._ff, **stamp,
                     )
             elif node == "rollback":
                 self.bus.publish(incident_id, "rollback",
-                                 rollback_result=update.get("rollback_result"))
+                                 rollback_result=update.get("rollback_result"), **stamp)
             # gate resume chunk: the `decision` event is already published by
             # the §5.4 handler (`_route_decision`); terminal chunk: `done` is
             # published by run_once with the resolve metric — both skipped here.
@@ -290,14 +322,17 @@ def create_serve_app(
     make_graph: Callable = build_graph,
     fixtures: list | None = None,
     checkpoint_path: str | None = None,
+    mode: str | None = None,
 ) -> FastAPI:
     """Build the serve app. `run_worker=False` + injected fakes support the
     zero-quota test suite; fixtures/checkpoint are injectable for the same
     reason (Ponytail: tests never need network or Redis state to assert shape).
+    `mode` labels the runtime (smoke fakes vs real quota) for honest operator
+    provenance (B1); defaults to the `NEXUSOPS_MODE` env var / "real".
     """
     bus = bus or EventBus()
     awaiter = awaiter or GateAwaiter()
-    driver = LiveDriver(bus, awaiter, make_graph)
+    driver = LiveDriver(bus, awaiter, make_graph, mode=mode)
     catalog = fixtures if fixtures is not None else [f for f in build_fixtures() if f.delivered]
 
     @asynccontextmanager
@@ -399,6 +434,7 @@ def create_serve_app(
             "redis": "ok" if redis_ok else "unreachable",
             "queue_depth": depth,
             "gates_waiting": awaiter.pending(),
+            "mode": driver.mode,
         }
 
     @app.websocket("/ws")

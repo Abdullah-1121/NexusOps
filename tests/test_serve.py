@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 
 import pytest
@@ -81,7 +82,7 @@ def test_driver_full_approve_cycle_events_and_rollback_once():
     async def main():
         bus = EventBus()
         awaiter = GateAwaiter()
-        driver = LiveDriver(bus, awaiter, make_graph=_smoke_graph(rollback_log))
+        driver = LiveDriver(bus, awaiter, make_graph=_smoke_graph(rollback_log), mode="real")
         reader = bus.subscribe()
         fixture = _fixture("approve")
         iid = fixture.alert["incident_id"]
@@ -93,6 +94,9 @@ def test_driver_full_approve_cycle_events_and_rollback_once():
             awaiter.wait(iid)
             assert awaiter.pending() == [iid]
             assert rollback_log == []  # NG-1: nothing fired before approval
+            # B1 timing honesty: the operator's decision wait (simulated here)
+            # must NEVER be inherited by the post-gate rollback stage.
+            await asyncio.sleep(0.5)
             assert awaiter.resolve(iid, {"decision": "approve", "actor": "ops"}) is True
             evs += await _drain_until(reader, "done")
             await asyncio.wait_for(task, timeout=5.0)
@@ -113,6 +117,28 @@ def test_driver_full_approve_cycle_events_and_rollback_once():
     done = events[-1]
     assert done["terminal"] == "resolved" and done["t_resolve_ms"] >= 0
     assert len(rollback_log) == 1
+
+    # B1 (2026-09-28): honest provenance on every milestone — the operator must
+    # be able to see which model ran, which runtime, and how long each stage
+    # took. If any stamp is dropped, this fails loudly instead of the console
+    # silently showing "—".
+    classified = next(e for e in events if e["type"] == "classified")
+    plan = next(e for e in events if e["type"] == "plan")
+    tool_call = next(e for e in events if e["type"] == "tool_call")
+    for ev in [classified, plan, tool_call, gate, rollback]:
+        assert ev["mode"] == "real", "runtime label must reach every milestone"
+        assert ev["stage_duration_ms"] is not None and ev["stage_duration_ms"] >= 0
+    assert classified["model_env"] == (os.environ.get("NEXUSOPS_SLM_MODEL") or "slm")
+    assert plan["model_env"] == (os.environ.get("NEXUSOPS_FRONTIER_MODEL") or "frontier")
+    # The post-gate stage restarts the clock at resume: the 0.5 s human wait
+    # above must NOT be claimed by the rollback stage (B1 timing honesty).
+    assert rollback["stage_duration_ms"] < 200, (
+        f"rollback stage inherited the decision wait: {rollback['stage_duration_ms']} ms"
+    )
+    # smoke_gather returns one row per tool, each tagged with its origin (B1).
+    assert {r.get("_tool") for r in tool_call["evidence"]} == {
+        "fetch_service_logs", "query_prometheus_metrics",
+    }
 
 
 def test_driver_rerun_of_same_incident_parks_fresh_no_stale_decision():

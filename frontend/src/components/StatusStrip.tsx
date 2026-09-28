@@ -5,31 +5,33 @@ import type { SystemStatus } from "../types";
 export default function StatusStrip({ status }: { status: SystemStatus | null }) {
   const redisOk = status?.redis === "ok";
   return (
-    <section className="rounded-lg border border-nexus-border bg-nexus-panel p-3">
-      <h2 className="mb-2 text-[11px] font-medium uppercase tracking-widest text-nexus-muted">
+    <section className="rounded-lg border border-nexus-border bg-nexus-panel shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+      <h2 className="border-b border-nexus-border px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-nexus-muted">
         System
       </h2>
-      <div className="flex flex-col gap-2 text-xs">
-        <div className="flex items-center justify-between">
-          <span className="text-nexus-muted">Redis</span>
-          <span className="flex items-center gap-1.5">
+      <div className="divide-y divide-nexus-border text-[12.5px]">
+        <div className="flex items-center justify-between px-3.5 py-2">
+          <span className="text-nexus-muted">Backend queue</span>
+          <span className="flex items-center gap-2">
             <span
               className={`h-1.5 w-1.5 rounded-full ${
-                redisOk ? "bg-nexus-green" : "bg-nexus-red animate-pulse"
+                redisOk ? "bg-nexus-green" : "animate-pulse bg-nexus-red"
               }`}
             />
-            {status ? status.redis : "…"}
+            <span className="font-mono text-[13px] font-semibold text-nexus-text">
+              {status ? status.redis : "…"}
+            </span>
           </span>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-nexus-muted">Queue depth</span>
-          <span className="font-mono text-nexus-text">
+        <div className="flex items-center justify-between px-3.5 py-2">
+          <span className="text-nexus-muted">Queued incidents</span>
+          <span className="font-mono text-[13px] font-semibold text-nexus-text">
             {status?.queue_depth ?? "…"}
           </span>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between px-3.5 py-2">
           <span className="text-nexus-muted">Gates waiting</span>
-          <span className="font-mono text-nexus-text">
+          <span className="font-mono text-[13px] font-semibold text-nexus-text">
             {status ? status.gates_waiting.length : "…"}
           </span>
         </div>

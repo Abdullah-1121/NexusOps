@@ -142,9 +142,27 @@ async def smoke_classify(messages: list[dict], model_env: str, schema: dict) -> 
 
 
 async def smoke_gather(incident: dict) -> list[dict]:
+    # m-* = malformed-log-source fixtures: deterministically EMPTY evidence
+    # (drives the manual-review path); all others return one row per tool,
+    # each tagged with its origin tool (B1) so the console shows the operator
+    # which data source produced which record even in zero-quota mode.
     if incident["incident_id"].startswith("m-"):  # malformed-log-source: empty evidence
         return []
-    return [{"timestamp": "2026-09-08T11:59:00Z", "level": "error", "message": "fixture evidence"}]
+    return [
+        {
+            "_tool": "fetch_service_logs",
+            "timestamp": "2026-09-08T11:59:00Z",
+            "level": "error",
+            "service": incident.get("service"),
+            "message": "fixture evidence: connection pool exhausted",
+        },
+        {
+            "_tool": "query_prometheus_metrics",
+            "metric": "error_rate",
+            "value": 12.4,
+            "window": "15m",
+        },
+    ]
 
 
 async def smoke_rca(messages: list[dict], model_env: str, schema: dict) -> dict:

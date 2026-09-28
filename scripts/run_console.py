@@ -69,6 +69,13 @@ def main() -> None:
 
     _flush_demo_redis(args.keep_redis)
 
+    import os
+
+    if args.smoke:
+        # B1: the operator header must say which runtime is honest — smoke fakes
+        # are NOT real model output, and the console labels it as such.
+        os.environ["NEXUSOPS_MODE"] = "smoke"
+
     from app.serve import create_serve_app
 
     make_graph = _smoke_make_graph() if args.smoke else None
