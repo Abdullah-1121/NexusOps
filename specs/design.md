@@ -1,6 +1,6 @@
 # NexusOps — Design Specification
 
-Status: **Phase 1 decision record — APPROVED** (v0.2, revised for WebSocket + Redis). Answers HOW, for the WHAT defined in `requirements.md`. Each major decision below compares options across **latency, cost, failure modes, complexity** and records the choice + reasoning. Deep per-feature design lives in `specs/features/<name>/spec.md`; this file owns the shared architecture and cross-cutting decisions.
+Status: **Phase 1 decision record — APPROVED** (v0.3, revised 2026-10-01: D-18 production-readiness audit recorded). Answers HOW, for the WHAT defined in `requirements.md`. Each major decision below compares options across **latency, cost, failure modes, complexity** and records the choice + reasoning. Deep per-feature design lives in `specs/features/<name>/spec.md`; this file owns the shared architecture and cross-cutting decisions.
 
 ## 1. Approved Decisions
 
@@ -221,6 +221,63 @@ Same live report, three UI gaps: *(1) "not enough details of the problem we are 
 
 **Chosen B everywhere.** The decision `reason` is strictly optional (the gate must never require prose — NG-1 is the decision itself), passes through the same `_route_decision` validation seam, and rides the resume body so the checkpoint stores *why* with *what*. `RCA_SCHEMA.reasoning` adds one required string; smoke/benchmark fixtures and `PLAN_REQUIRED_KEYS` follow (both are pinned by existing schema-consistency tests). The incident `context` is sender-provided data, not ground truth — safe to expose on `/api/fixtures` (the fixtures-API test's allowed-field set grows explicitly).
 
+### D-18 Production-readiness audit — metric framework + baseline scorecard (2026-10-01, user-initiated)
+
+**Problem:** the operator asked, plainly: *"is our production grade or not — and what are the metrics of a system that doesn't break in production?"* The answer must not be a vibe. Adopted definition (the framework that makes the audit a number, not an opinion): **a system is production-grade when it breaks *rarely, small, loudly, and heals fast* — and each of those four properties is provable by numbers.** Recording the grading criteria in the spec (not in a review comment) is what gives every future "is X production-ready?" question an owner.
+
+**Decision 1 — the metric framework is part of the spec.** Two families, both required.
+
+*Family 1 — runtime reliability (the numbers you report):*
+
+| Metric | Definition |
+|---|---|
+| Availability + error budget | SLO (e.g. 99.9%) with a *spendable* error budget — budget burn alerts **before** customers feel it; a static promise with no budget is a plaque, not a metric |
+| Error rate | per-operation failure rate, **classified** — the typed `ModelError.kind` taxonomy (D-15) is exactly the right shape; quota vs transport vs contract must be distinguishable in the number |
+| Latency percentiles | p50/p95/p99; for an LLM pipeline, **per-stage** (classify vs evidence vs RCA) — the tail is vendor-bound and must be reported separately, not folded into one number (NFR-1 already does this) |
+| Durability | events lost per N; delivery semantics — **at-least-once vs exactly-once vs effectively-once** must be *named*, not assumed |
+| Freshness | alert → operator sees it, within a budget |
+| Throughput + dead-letter | queue depth under load; incidents that can never be processed surface as a named count, not silence |
+
+*Family 2 — failure-prevention engineering (whether it breaks at all):*
+
+| Metric | Definition |
+|---|---|
+| MTTD | how fast you *know* it's down — alarms, not log-diving |
+| MTTR + blast radius | how fast you heal, and how far a failure spreads |
+| DORA-4 | deployment frequency, lead time for change, **change failure rate**, time to restore — CFR is the single best predictor of "breaks in production": most breakage is *introduced by change*, so the change pipeline is the highest-leverage place to measure |
+| CI gating | tests that **block** a merge, not tests that pass after the fact |
+| Reproducibility | replay a past incident and get the same answer — the anti-regression property |
+| Fail-fast + degrade | failures announce themselves (loud, typed, contained) and degrade along designed paths — never silently |
+| Auth/authz + state durability | least privilege per user; state survives process death |
+
+**Decision 2 — the 2026-10-01 baseline audit (current state, graded against the framework).**
+
+| Metric | Production target | NexusOps today (2026-10-01) |
+|---|---|---|
+| Availability | SLO + supervisor + auto-restart | ✗ **missing** — crash = manual relaunch (observed the day this was written: the console died with the server and was relaunched by hand) |
+| Error rate | budgeted (~<0.1%) | ⚠ **flaky by design** — free-tier SLM 503 bursts; last real-mode run answered 2/6 with every outage an honest `manual_review` (D-6/D-9/D-14) — the degrade machinery is right, the budget is absent |
+| Latency p95/stage | budgeted per stage | ✗ not measured systematically outside benchmark/golden runs |
+| Durability | effectively-once, semantics named | ⚠ at-least-once + Redis dedupe (D-2) — but the served console flushes its queue + seen-set at startup, so a restart can re-deliver and re-open a gate; in-flight loss is accepted (D-3), restart *reprocessing* is an unowned risk (R-9) |
+| Freshness | alert→gate SLO | ✗ unbudgeted |
+| MTTD | auto-alert, minutes | ✗ **dead telemetry sink** — OTLP retry noise against a down collector (D-7 stack) is the only signal; breakage is found by reading logs (R-8) |
+| MTTR | staged, human-gated rollback | ⚠ real scoped rollback + live gate exist (D-10/D-11, GitHub tag) — right shape, minimal blast scope; no app-level recovery path |
+| DORA-4 | CI blocks bad changes, CFR measured | ✗ **zero CI** — 104 tests are a claim, not a gate; CFR/lead-time unmeasurable (R-7) |
+| Replay determinism | reproduce past incidents | ✓ **strong** — golden replay (D-8), record/judge split, smoke(0-token)/real, judge `inconclusive` on failure (never a silent score) |
+| Fail-fast + degrade | loud, typed, contained | ✓ **strong** — D-6 `manual_review`, D-15 typed never-empty kinds, D-16 mandatory reasoning, NG-1 pre-approval lockdown, honest queued feedback (D-11 postmortem #5) |
+| Auth/authz | least privilege per user | ✗ none beyond NG-3's single shared key — anyone on the network can read incidents and press the gate (R-6) |
+| State survives restart | durable ledger | ✗ gates/seed/dedupe held in memory + Redis queue; no incident ledger (future D-17) |
+
+**Conclusion (verbal, defensible): NexusOps today is not production-grade as a system for a user base — its AI-specific discipline is production-grade, and the gap is exactly located.** The asymmetry is the natural shape of a demo-that-grew-machinery: the interesting layers (pipeline, honesty, eval) received real investment; the uninteresting-but-load-bearing layers (supervision, auth, CI, persistence, alarms) did not — which is precisely where production systems fail. Naming the framework in the spec is what gives these gaps owners.
+
+**Decision 3 — closure plan, in leverage order.** Each item becomes its own spec + task file when a real tenant is named; none execute against a user base until then (read-only posture unchanged).
+
+1. **Process supervision + watchdog** (launchd/systemd + `/api/status` probe restart) — kills the unmonitored-downtime class; ~30 min of work.
+2. **Durable incident ledger** (future **D-17**) — fixes restart durability *and* dedupe persistence *and* becomes the eval dataset of the observe→improve loop: one build, three wins.
+3. **Auth on console + API** — mandatory before any real user or real data, even read-only.
+4. **CI on GitHub Actions** — pytest + `tsc -b` + Vite build + smoke benchmark gate on every merge; turns "104 tests" from a claim into a guardrail.
+5. **Stand up the OTLP sink or rip it out** — a dead collector is a lie in the telemetry; restores real MTTD.
+6. **Two SLOs once real data flows** — alert→gate freshness, quota-fallback rate. SLOs need the ledger (2) to be honest.
+
 ## 2. System Architecture
 
 ```
@@ -315,6 +372,12 @@ Same live report, three UI gaps: *(1) "not enough details of the problem we are 
 - **R-2:** Frontier-call latency is vendor-bound. Mitigation: excluded from NFR-1; reported separately; timeouts route to `manual_review`.
 - **R-3:** WebSocket ordering + reconnect catch-up must stay consistent — a reconnecting client may have missed events mid-drop. Mitigation: per-incident event replay on connect (FR-6); load-test at 30 incidents in the benchmark.
 - **R-4:** Redis is an extra runtime dependency for every test/benchmark run. Mitigation: NFR-6 refuses degraded operation; install command in `specs/features/webhook-ingest/tasks.md`; `redis-server` started as part of any run instructions.
+- **R-5 (D-18):** no process supervision — a crash or host restart leaves the console dead until a human relaunches (observed 2026-10-01). Mitigation: closure item 1 — launchd/systemd supervisor or container orchestration + `/api/status` watchdog restart.
+- **R-6 (D-18):** no authz on the console or API beyond NG-3's single shared key — anyone on the network can read incidents and operate the gate (press approve → trigger a real rollback tag via D-10). Mitigation: closure item 3 — mandatory before any real user or real data, even read-only.
+- **R-7 (D-18):** zero CI — the 104-test suite is a claim, not a gate; a breaking change can reach `main` unmeasured; CFR/lead-time are unmeasurable (DORA-4). Mitigation: closure item 4 — GitHub Actions running pytest + `tsc -b` + Vite build + smoke benchmark on every merge.
+- **R-8 (D-18):** dead telemetry sink — OTLP retry noise against a down collector (D-7) is the only signal, so MTTD is log-diving, not alarms. Mitigation: closure item 5 — stand the collector up (Jaeger stack exists, `scripts/start-jaeger.sh`) or strip the exporter so silence is truthful.
+- **R-9 (D-18):** served console's queue + seen-set are flushed at startup — a restart can re-deliver an alert and re-open a previously-decided gate (D-2's "dedupe survives restarts" holds for the ingest layer, not the console's own working set). Mitigation: closure item 2 — durable incident ledger (future D-17) + persistent dedupe.
+- **R-10 (D-18):** free-tier quotas are a runtime dependency (SLM ~500 req/day with 503 bursts; frontier ~20 req/day, hard 429 cap) — acceptable for rehearsal by design (D-6/D-9/D-14 honest degrade), not for a production SLA. Mitigation: closure item 6 — SLOs with a quota-fallback budget once real data flows; funded tiers if a tenant signs.
 
 ## 8. Where Per-Feature Detail Lives
 
