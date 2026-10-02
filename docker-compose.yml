@@ -1,0 +1,71 @@
+# NexusOps supervised stack (D-19 / T-8.1).
+#
+# Two boxes: redis (the console's notepad) + console (the app + its lifeguard).
+# Three survival rules:
+#   restart: unless-stopped  — a killed or crashed box comes back on its own;
+#                              an explicit `docker compose stop` stays stopped.
+#   init: true               — tini runs as PID 1: stop-signals reach the app
+#                              properly and no zombie processes are left behind.
+#   healthcheck              — "is the app actually SERVING /api/status?"
+#                              (informational; the guard inside is the one that
+#                              ACTS on the same endpoint)
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # The named volume is the notepad that survives box recreation: "restart
+    # the stack" must not mean "throw away the queue".
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    # No ports published: the console is the only client and reaches Redis by
+    # the service name on the compose network. Keeping 6379 private means this
+    # stack never collides with the local dev redis-server on the Mac.
+
+  console:
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env                     # secrets at runtime only — never in the image
+    environment:
+      # The compose service name IS the hostname on the compose network.
+      NEXUSOPS_REDIS_URL: redis://redis:6379/0
+      # Point OTLP at the host: inside the box, "localhost:4318" is the box
+      # itself (guaranteed dead -> shutdown-flush hang risk). host.docker.internal
+      # reaches the Mac's own network, so when Jaeger comes up (T-8.5) container
+      # telemetry reaches it with no further changes. Connection refused is fast,
+      # not a hang.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4318
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy   # start the console only once the notepad is awake
+    ports:
+      - "8137:8137"                  # the operator's door to the console
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8137/api/status', timeout=3)\""]
+      interval: 5s
+      timeout: 3s
+      retries: 2
+      start_period: 30s              # model import + boot is slow; don't flag it
+    # Console flags (guarded by scripts.run_guard, which spawns the module
+    # named by its first arg and forwards the rest verbatim):
+    #   scripts.run_console   the module to supervise (python -m ...)
+    #   --host 0.0.0.0        listen at every door (loopback-only is invisible
+    #                         to published ports)
+    #   --slm-rca             RCA on the fast/cheap model — matches today's console
+    #   --keep-redis          in this PRIVATE network the startup flush would only
+    #                         destroy in-flight state on every auto-restart (R-9) —
+    #                         the flush's original reason (shared-dev-Redis
+    #                         pollution) does not exist here; the container opts out.
+    command: ["scripts.run_console", "--port", "8137", "--host", "0.0.0.0",
+              "--slm-rca", "--keep-redis"]
+
+volumes:
+  redis-data:

@@ -8,6 +8,8 @@ data.
 """
 
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -257,3 +259,37 @@ class TestFilmPlayer:
         )
         assert r.status_code == 200
         assert r.json()["status"] == "rejected"
+
+
+def test_importing_player_without_checkpoint_never_crashes(tmp_path):
+    """D-19 container surfaced a latent bug: app.player created its default
+    app at IMPORT time, and create_player_app() reads outG1.json — so merely
+    importing the module crashed on any machine without the dev-produced
+    checkpoint (the Docker image, a clean checkout). serve.py imports
+    app.player to mount /film, so one missing consumable killed the whole
+    console. The module-level app must degrade to an honest empty stub.
+
+    Regression pinned in a subprocess with a throwaway CWD and no checkpoint
+    env — the exact container condition — not a monkeypatched import (the
+    module is already imported at the top of this file)."""
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[1]
+    env = {k: v for k, v in os.environ.items() if k != "NEXUSOPS_CHECKPOINT"}
+    code = (
+        "import sys; sys.path.insert(0, {root!r})\n"
+        "import app.player\n"
+        "assert app.player._checkpoint_available() is False\n"
+        "from fastapi.testclient import TestClient\n"
+        "r = TestClient(app.player.app).get('/')\n"
+        "assert r.status_code == 200, r.status_code\n"
+        "assert 'No recorded checkpoint yet' in r.text\n"
+        "print('player import ok')\n"
+    ).format(root=str(repo_root))
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "player import ok" in result.stdout

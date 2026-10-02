@@ -103,6 +103,10 @@ def main() -> None:
                              "flash-lite — faster, cheaper, immune to free-tier "
                              "frontier 503 flapping; shallower root-cause prose)")
     parser.add_argument("--port", type=int, default=8137)
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="bind address (default 127.0.0.1; containers pass "
+                             "0.0.0.0 — a loopback-only bind is invisible to "
+                             "Docker's published ports, D-19)")
     parser.add_argument("--keep-redis", action="store_true",
                         help="do not flush demo queue + seen-set at startup")
     args = parser.parse_args()
@@ -131,8 +135,8 @@ def main() -> None:
 
     mode = "SMOKE (zero quota)" if args.smoke else "REAL (Gemini, quota)"
     rca = " — RCA on SLM (--slm-rca)" if args.slm_rca else ""
-    print(f"NexusOps console on http://127.0.0.1:{args.port} — mode: {mode}{rca}")
-    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")
+    print(f"NexusOps console on http://{args.host}:{args.port} — mode: {mode}{rca}")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

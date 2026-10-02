@@ -1,0 +1,34 @@
+# Tasks — 8. Production Hardening (D-18 closure)
+
+Phase gates per AGENTS.md: 1 socratic-architect → 2 ponytail → 3 implementation → 4 adversarial-reviewer → 5 feynman. Task state: **todo → in-progress → done → blocked**. Update the board (`specs/tasks.md`) after each verified cycle.
+
+| # | Task | Phases 1–5 | Verified |
+|---|---|---|---|
+| 8.1 | Process supervision: Docker Compose (Redis + console, restart policy, `init: true`) + `scripts/run_guard.py` (probe `/api/status`, SIGTERM→SIGKILL escalation) + `--host` flag; guard pinned by pytest; live auto-restart proof | done | Live crash proof: killed the in-container console (kill -9; pid from the container's own `/proc`), guard logged `console exited with code -9 — mirroring and exiting`, restart policy rebuilt the box (**RestartCount 0→1**), fresh guard booting the console **<2 s** later; `/api/status` healthy, real mode. Full suite **109 passed**. `/film` degrades to the honest "No recorded checkpoint" stub. No `.env`/secret in image layers (`docker history`). Findings 5–8 recorded below. Phase 5 closing interview posed in session. |
+| 8.2 | Durable incident ledger (future D-17) — fixes restart durability + dedupe persistence + becomes the eval dataset of the observe→improve loop | todo | — |
+| 8.3 | Auth on console + API — mandatory before any real user or real data, even read-only | todo | — |
+| 8.4 | CI on GitHub Actions — pytest + `tsc -b` + Vite build + smoke benchmark gate on every merge | todo | — |
+| 8.5 | Stand up the OTLP sink or rip it out — a dead collector is a lie in the telemetry | todo | — |
+| 8.6 | Two SLOs once real data flows (alert→gate freshness, quota-fallback rate) | todo | — |
+
+## Context7 stamps
+- No external library introduced by T-8.1: guard = Python stdlib only (`subprocess`, `urllib`, `signal`, `time`, `sys`); Compose `init: true` ships tini; official `redis:7-alpine` and `python:3.12-slim` base images. No stamp required (AGENTS.md §2 — the protocol applies to libraries whose APIs we call in code).
+
+## Phase 4 findings
+1. **Dead helper — removed (Ponytail).** First cut had `terminate_escalating()` (SIGTERM→wait→SIGKILL, one-shot), then the main loop grew its own flag-driven escalation and the helper became unused vestigial code (with an unused param). Deleted; the loop is now the single owner of escalation. Principle: *strip abstraction until the next cut breaks something real.*
+2. **In-handler `child.terminate()` — challenged, defended, pinned in a comment.** Calling into subprocess from a signal handler is the classic "not async-signal-safe" smell. Verdict: deliberate — `docker stop` gives tini a 10 s budget, so forwarding only via a flag would let the main loop's up-to-a-tick sleep blow that budget and get a draining console SIGKILLed mid-drain. The handler's `poll()`+flag guard makes a double signal harmless. Comment added so a future reader doesn't "fix" it into a hang.
+3. **`probe_ok` broad `except Exception` — defended.** Every way to receive NO response (timeout, refused, DNS) is a miss; there is no exception we'd treat differently. HTTPError counts as *serving* (a response arrived). Semantics now documented on the function.
+4. **Test-found guardrail lesson:** with `NEXUSOPS_GUARD_BOOT_GRACE=0` the guard killed a perfectly healthy dummy console while it was still binding its socket — the exact failure the grace window exists to prevent. Production default 30 s stands; tests keep grace 1.5 s (covers the dummy's import+bind) and the crash-dummy exits instantly (a crashed process doesn't linger politely).
+5. **Guard child contract — live-caught in the box, module-form pinned (Bug 1).** First cut spawned `python <script> <args>`; the real image runs modules (`python -m scripts.run_console`), and the guard emitted `python --port...` — no `-m`, so the child crashed at argv parsing and Docker correctly crash-looped (supervision worked, contract was broken). Contract now: **argv[1] after `scripts.run_guard` is the child MODULE; the child is always spawned `python -m <module> <rest...>`**. Compose command updated; all guard tests spawn in module form.
+6. **Import-time crash — live-caught in the box (Bug 2: the console's third death today).** The image has no dev-produced `outG1.json`, so `app.player`'s module-level `app = create_player_app()` crashed **at import** — and `serve.py` imports `app.player` to mount `/film`, so one missing consumable took down the whole console. Fixed with `_checkpoint_available()` + `_no_recording_app()` in `app/player.py`: the module-level app now degrades to an honest stub when no checkpoint exists. Regression pinned in `tests/test_rollback.py::test_importing_player_without_checkpoint_never_crashes` — subprocess import from a checkpoint-less CWD, the exact container condition. Lesson: *imports must not do I/O on files that may not exist; degradation must be explicit, not a traceback.*
+7. **Suite-found timing flake in the test dummy (not the guard).** `fake_console.py`'s serve-mode graceful stop ran `server.shutdown()`, which blocks on `serve_forever`'s 0.5 s poll cycle — a coin flip against the test's fast `TERM_WAIT=0.5 s`, lost once in the full suite. The dummy exists to test the GUARD, not HTTP-server teardown, so its graceful stop is now an instant `sys.exit(0)` (the real console's drain is exactly what `TERM_WAIT` budgets for). Guard tests 5×5 green after the fix.
+8. **Demo semantics (must-know for the portfolio story):** `docker compose kill` / `docker stop` are **operator-stop** events — `restart: unless-stopped` rightly does NOT restart them (verified: `RestartCount` stayed 0, container stayed Exited). The honest crash class is the **in-container process dying on its own** (machine restart, OOM, app fault). Also: slim images ship no `pgrep` and no `/usr/bin/kill` — exec must use `/bin/sh -c` for the builtin; `docker top` on Docker Desktop reports VM-side PIDs, so derive the target PID from `/proc` inside the exec (the console is pid 8 there, matching "Started server process [8]").
+
+## Secrets hygiene
+- `env_file: .env` + `.dockerignore` excluding `.env` — keys reach the container at runtime only, never baked into image layers. Verified via `docker history` in the acceptance run.
+- The guard never reads, writes, or logs secrets — it forwards the environment untouched, so it cannot leak what it never touches.
+
+## Setup
+- Prerequisite: Docker Desktop running on the dev machine (verified 29.7.2 / Compose v5.4.0, 2026-10-02).
+- Run the supervised stack: `docker compose up -d --build` — console on `http://127.0.0.1:8137`, supervision log via `docker logs -f console`.
+- Bare-metal dev loop unchanged (localhost Redis + `python -m scripts.run_console`).

@@ -405,4 +405,42 @@ loadList();
 </html>
 """
 
-app = create_player_app()
+def _no_recording_app() -> FastAPI:
+    """Honest empty film for the D-10 standalone entrypoint
+    (`uvicorn app.player:app`) when no checkpoint exists yet.
+
+    Import-time guardrail (D-19 box): the module used to create its default
+    app UNCONDITIONALLY at import (line 408), and `create_player_app()` reads
+    `outG1.json` — so merely importing this module crashed on any machine
+    without the dev-produced checkpoint (the container, a clean checkout).
+    serve.py imports app.player to mount /film, so one missing consumable
+    killed the whole console. The module-level app now degrades to this
+    honest stub; serve.py still mounts its own /film stub and is unaffected.
+    """
+    stub = FastAPI(title="NexusOps — Film (no recording)")
+
+    @stub.get("/", response_class=HTMLResponse)
+    async def index() -> str:
+        return (
+            "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+            "<title>No recording</title>"
+            "<style>body{font-family:system-ui;background:#0f1115;color:#e8eaf0;"
+            "display:grid;place-items:center;height:100vh;margin:0}"
+            "div{max-width:34rem;text-align:center;line-height:1.7}"
+            "code{color:#8ab4f8}</style></head><body><div>"
+            "<h1>No recorded checkpoint yet</h1>"
+            "<p>The film plays recorded benchmark runs from "
+            "<code>outG1.json</code> (or <code>NEXUSOPS_CHECKPOINT</code>). "
+            "Record a run first, then come back.</p></div></body></html>"
+        )
+
+    return stub
+
+
+def _checkpoint_available() -> bool:
+    """True when a recorded checkpoint exists. Same resolution as
+    load_checkpoint's default (env var, else CWD-relative outG1.json)."""
+    return Path(os.environ.get("NEXUSOPS_CHECKPOINT", CHECKPOINT_DEFAULT)).exists()
+
+
+app = create_player_app() if _checkpoint_available() else _no_recording_app()

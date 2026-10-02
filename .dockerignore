@@ -1,0 +1,24 @@
+# What Docker may IGNORE when packing the box. `.env` here is the critical
+# line: secrets reach the container only via `env_file` at runtime, so they
+# can never be baked into an image layer someone inspects with `docker history`.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+frontend/node_modules/
+frontend/dist/          # rebuilt inside the image from source
+.env
+.env.*
+!.env.example
+.git/
+.python-version
+specs/                  # documentation — not runtime
+out*.json
+*_report.json
+*_err.log
+*.log
+.DS_Store
+.playwright-mcp/
+.idea/
+.vscode/

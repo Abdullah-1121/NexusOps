@@ -278,6 +278,30 @@ Same live report, three UI gaps: *(1) "not enough details of the problem we are 
 5. **Stand up the OTLP sink or rip it out** — a dead collector is a lie in the telemetry; restores real MTTD.
 6. **Two SLOs once real data flows** — alert→gate freshness, quota-fallback rate. SLOs need the ledger (2) to be honest.
 
+### D-19 Process supervision — Docker Compose + in-container health guard (2026-10-02, user-initiated "make it production-grade as a portfolio")
+
+**Problem:** R-5 observed **live, three times** — the console died with the host and nothing noticed until a human relaunched it. The D-18 Availability row is ✗. This is closure item 1.
+
+**Socratic Phase 1 — options compared across latency / cost / failure modes / complexity, then user-chosen + reviewed:**
+
+| Shape | What it does | Verdict |
+|---|---|---|
+| launchd/systemd alone | restarts on crash (process-table exit) | rejected — macOS-only, no tests, and **alive-but-wedged is never restarted** (KeepAlive watches liveness, not serving) |
+| Own standalone watchdog | probes `/api/status`, restarts on crash AND hang | good and portable — but containers were chosen |
+| Docker `restart:` policy alone | restarts on crash (container exit), ignores health status | rejected — the wedge gap follows into the container |
+| supervisord/pm2/autoheal sidecar | external dep/images, still no serving semantics without a probe | rejected (Ponytail: zero unneeded deps) |
+| **Approved (D-C)** — Docker Compose (Redis + console) + `init: true` (tini) + `scripts/run_guard.py` | Docker owns crash-restart + `docker logs` isolation; tini owns signal-forwarding + zombie reaping; the guard owns the honest *serving* signal and kills the wedged console so the container exits and the policy restarts it | **the union of the user's choice and the liveness-vs-readiness gap the review surfaced** |
+
+**Probe semantics (the subtle call, defended):** the guard GETs `/api/status` with a hard 3 s timeout. **Any** HTTP response — including the truthful `200 {"redis": "unreachable"}` (`serve.py` catches `RedisError` and returns the dict) — counts as healthy: the app is alive and honest, and the Redis sidecar (`restart: unless-stopped`) self-heals. Only a **timeout** (wedged event loop — nothing short of a wedged loop makes the endpoint ignore a request) increments the miss counter; 3 consecutive misses (~15–25 s) → SIGTERM → 10 s wait (the app's own lifespan drain budget, `serve.py:382`) → SIGKILL — the D-11 postmortem #2 escalation verbatim, automated.
+
+**Scope boundaries (why these lines exist):** the guard mirrors the child's exit code and **never restarts in-process** — the supervisor restarts; and **never more than one console worker** — the queue consumer runs in-process on the lifespan (`serve.py:358`), so two workers would double-consume Redis (a postmortem-class bug the docstring forbids). One application change only: `--host` on `run_console.py` (default `127.0.0.1` unchanged; the container passes `0.0.0.0` — a loopback-only bind is invisible to Docker's published ports). Redis stays env-driven: `NEXUSOPS_REDIS_URL=redis://redis:6379/0` (the compose service name is the network hostname) — verified zero-code-change in ingest/serve/benchmark/run_console. The container runs `--keep-redis`: the startup flush existed to isolate the demo sandbox from benchmark pollution of a **shared** local Redis db 0; in the private compose network the flush's only remaining effect is destroying in-flight state on every auto-restart (the R-9 footgun), so the container opts out. Bare-metal dev loop unchanged.
+
+**Secrets:** `env_file: .env` + `.dockerignore` excluding `.env` — keys reach the container at runtime only, never baked into image layers (`docker history` hygiene).
+
+**Cost:** one new external toolchain — Docker Desktop (verified 29.7.2 / Compose v5.4.0 on this Mac, 2026-10-02). Zero pip/npm additions (guard is stdlib-only; Compose `init: true` ships tini).
+
+**Verified live 2026-10-02 (acceptance):** full suite **109 passed** (104 baseline + 4 guard + 1 import regression). Image rebuilt; console `Up (healthy)`, `/api/status` in real mode through the published port; `/film` degrades to the honest "No recorded checkpoint" stub (the film player only mounts when a checkpoint exists; unwritten piece of the API responding "Not Found" is *correct honesty*, not a gap); `.env` absent from image layers (`docker history`). **Live crash proof:** killed the in-container console process (kill -9 — the machine-restart class, pid derived from the container's own `/proc`), guard logged `console exited with code -9 — mirroring and exiting`, the restart policy rebuilt the box (`RestartCount` 0→1), and a fresh guard had a healthy console serving <2 s later. Two live-caught contract bugs fixed and pinned (guard child spawns `python -m <module>`; `app.player`'s module-level app degrades to `_no_recording_app()` when no checkpoint exists — imports must not do I/O on may-not-exist files). Demo semantics recorded in the feature ledger: `docker compose kill`/`docker stop` are operator-stop events that `unless-stopped` rightly honors — crash demos must kill an in-container process, not the container.
+
 ## 2. System Architecture
 
 ```
@@ -372,7 +396,7 @@ Same live report, three UI gaps: *(1) "not enough details of the problem we are 
 - **R-2:** Frontier-call latency is vendor-bound. Mitigation: excluded from NFR-1; reported separately; timeouts route to `manual_review`.
 - **R-3:** WebSocket ordering + reconnect catch-up must stay consistent — a reconnecting client may have missed events mid-drop. Mitigation: per-incident event replay on connect (FR-6); load-test at 30 incidents in the benchmark.
 - **R-4:** Redis is an extra runtime dependency for every test/benchmark run. Mitigation: NFR-6 refuses degraded operation; install command in `specs/features/webhook-ingest/tasks.md`; `redis-server` started as part of any run instructions.
-- **R-5 (D-18):** no process supervision — a crash or host restart leaves the console dead until a human relaunches (observed 2026-10-01). Mitigation: closure item 1 — launchd/systemd supervisor or container orchestration + `/api/status` watchdog restart.
+- **R-5 (D-18):** no process supervision — a crash or host restart leaves the console dead until a human relaunches (observed 2026-10-01, again 2026-10-02). **Mitigation landed 2026-10-02 (D-19 / T-8.1):** Docker Compose stays + in-container health guard — crash restart via `restart: unless-stopped`, wedge detection via guard probing `/api/status`, supervised container verified live.
 - **R-6 (D-18):** no authz on the console or API beyond NG-3's single shared key — anyone on the network can read incidents and operate the gate (press approve → trigger a real rollback tag via D-10). Mitigation: closure item 3 — mandatory before any real user or real data, even read-only.
 - **R-7 (D-18):** zero CI — the 104-test suite is a claim, not a gate; a breaking change can reach `main` unmeasured; CFR/lead-time are unmeasurable (DORA-4). Mitigation: closure item 4 — GitHub Actions running pytest + `tsc -b` + Vite build + smoke benchmark on every merge.
 - **R-8 (D-18):** dead telemetry sink — OTLP retry noise against a down collector (D-7) is the only signal, so MTTD is log-diving, not alarms. Mitigation: closure item 5 — stand the collector up (Jaeger stack exists, `scripts/start-jaeger.sh`) or strip the exporter so silence is truthful.
